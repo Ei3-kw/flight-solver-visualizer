@@ -1,0 +1,25 @@
+@import 'tailwindcss';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* Range slider thumb cross-browser */
+input[type='range']::-moz-range-thumb {
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: white;
+	border: none;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+	cursor: pointer;
+}
+
+input[type='range']::-moz-range-track {
+	background: transparent;
+}

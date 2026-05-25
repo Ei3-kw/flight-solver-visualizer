@@ -1,0 +1,1306 @@
+{
+  "meta": {
+    "days": 30,
+    "horizon_end": 53280,
+    "solve_status": "rolling_horizon",
+    "total_cost": 111294574.61333334,
+    "flight_cost": 1259000.0,
+    "deadhead_cost": 171000.0,
+    "wait_cost": 0.0,
+    "uncovered_slots": 11.0,
+    "num_flights": 28,
+    "covered_flights": 23
+  },
+  "crew": [
+    {
+      "id": 0,
+      "base": "JFK"
+    },
+    {
+      "id": 1,
+      "base": "JFK"
+    },
+    {
+      "id": 2,
+      "base": "JFK"
+    },
+    {
+      "id": 3,
+      "base": "JFK"
+    },
+    {
+      "id": 4,
+      "base": "JFK"
+    },
+    {
+      "id": 5,
+      "base": "LAX"
+    },
+    {
+      "id": 6,
+      "base": "LAX"
+    },
+    {
+      "id": 7,
+      "base": "LAX"
+    },
+    {
+      "id": 8,
+      "base": "LAX"
+    },
+    {
+      "id": 9,
+      "base": "LAX"
+    },
+    {
+      "id": 10,
+      "base": "MIA"
+    },
+    {
+      "id": 11,
+      "base": "MIA"
+    },
+    {
+      "id": 12,
+      "base": "MIA"
+    },
+    {
+      "id": 13,
+      "base": "MIA"
+    },
+    {
+      "id": 14,
+      "base": "MIA"
+    },
+    {
+      "id": 15,
+      "base": "ORD"
+    },
+    {
+      "id": 16,
+      "base": "ORD"
+    },
+    {
+      "id": 17,
+      "base": "ORD"
+    },
+    {
+      "id": 18,
+      "base": "ORD"
+    },
+    {
+      "id": 19,
+      "base": "ORD"
+    }
+  ],
+  "flights": [
+    {
+      "id": 0,
+      "flight_num": "1000",
+      "origin": "JFK",
+      "dest": "LAX",
+      "dep_min": 360,
+      "arr_min": 600,
+      "duration": 240,
+      "min_crew": 4
+    },
+    {
+      "id": 1,
+      "flight_num": "1001",
+      "origin": "LAX",
+      "dest": "JFK",
+      "dep_min": 1910,
+      "arr_min": 2110,
+      "duration": 200,
+      "min_crew": 3
+    },
+    {
+      "id": 2,
+      "flight_num": "1002",
+      "origin": "JFK",
+      "dest": "ORD",
+      "dep_min": 3420,
+      "arr_min": 3508,
+      "duration": 88,
+      "min_crew": 3
+    },
+    {
+      "id": 3,
+      "flight_num": "1003",
+      "origin": "ORD",
+      "dest": "JFK",
+      "dep_min": 4970,
+      "arr_min": 5058,
+      "duration": 88,
+      "min_crew": 4
+    },
+    {
+      "id": 4,
+      "flight_num": "1004",
+      "origin": "JFK",
+      "dest": "MIA",
+      "dep_min": 6480,
+      "arr_min": 6615,
+      "duration": 135,
+      "min_crew": 3
+    },
+    {
+      "id": 5,
+      "flight_num": "1005",
+      "origin": "MIA",
+      "dest": "JFK",
+      "dep_min": 830,
+      "arr_min": 925,
+      "duration": 95,
+      "min_crew": 3
+    },
+    {
+      "id": 6,
+      "flight_num": "1006",
+      "origin": "LAX",
+      "dest": "ORD",
+      "dep_min": 2340,
+      "arr_min": 2522,
+      "duration": 182,
+      "min_crew": 4
+    },
+    {
+      "id": 7,
+      "flight_num": "1007",
+      "origin": "ORD",
+      "dest": "LAX",
+      "dep_min": 3890,
+      "arr_min": 4032,
+      "duration": 142,
+      "min_crew": 3
+    },
+    {
+      "id": 8,
+      "flight_num": "1008",
+      "origin": "LAX",
+      "dest": "MIA",
+      "dep_min": 4680,
+      "arr_min": 4957,
+      "duration": 277,
+      "min_crew": 3
+    },
+    {
+      "id": 9,
+      "flight_num": "1009",
+      "origin": "MIA",
+      "dest": "LAX",
+      "dep_min": 6230,
+      "arr_min": 6467,
+      "duration": 237,
+      "min_crew": 4
+    },
+    {
+      "id": 10,
+      "flight_num": "1011",
+      "origin": "MIA",
+      "dest": "ORD",
+      "dep_min": 2090,
+      "arr_min": 2199,
+      "duration": 109,
+      "min_crew": 3
+    },
+    {
+      "id": 11,
+      "flight_num": "1012",
+      "origin": "JFK",
+      "dest": "LAX",
+      "dep_min": 3600,
+      "arr_min": 3840,
+      "duration": 240,
+      "min_crew": 4
+    },
+    {
+      "id": 12,
+      "flight_num": "1013",
+      "origin": "LAX",
+      "dest": "JFK",
+      "dep_min": 5150,
+      "arr_min": 5350,
+      "duration": 200,
+      "min_crew": 3
+    },
+    {
+      "id": 13,
+      "flight_num": "1014",
+      "origin": "JFK",
+      "dest": "ORD",
+      "dep_min": 6660,
+      "arr_min": 6748,
+      "duration": 88,
+      "min_crew": 3
+    },
+    {
+      "id": 14,
+      "flight_num": "1015",
+      "origin": "ORD",
+      "dest": "JFK",
+      "dep_min": 1010,
+      "arr_min": 1098,
+      "duration": 88,
+      "min_crew": 4
+    },
+    {
+      "id": 15,
+      "flight_num": "1016",
+      "origin": "JFK",
+      "dest": "MIA",
+      "dep_min": 1800,
+      "arr_min": 1935,
+      "duration": 135,
+      "min_crew": 3
+    },
+    {
+      "id": 16,
+      "flight_num": "1017",
+      "origin": "MIA",
+      "dest": "JFK",
+      "dep_min": 3350,
+      "arr_min": 3445,
+      "duration": 95,
+      "min_crew": 3
+    },
+    {
+      "id": 17,
+      "flight_num": "1018",
+      "origin": "LAX",
+      "dest": "ORD",
+      "dep_min": 4860,
+      "arr_min": 5042,
+      "duration": 182,
+      "min_crew": 4
+    },
+    {
+      "id": 18,
+      "flight_num": "1019",
+      "origin": "ORD",
+      "dest": "LAX",
+      "dep_min": 6410,
+      "arr_min": 6552,
+      "duration": 142,
+      "min_crew": 3
+    },
+    {
+      "id": 19,
+      "flight_num": "1020",
+      "origin": "LAX",
+      "dest": "MIA",
+      "dep_min": 720,
+      "arr_min": 997,
+      "duration": 277,
+      "min_crew": 3
+    },
+    {
+      "id": 20,
+      "flight_num": "1021",
+      "origin": "MIA",
+      "dest": "LAX",
+      "dep_min": 2270,
+      "arr_min": 2507,
+      "duration": 237,
+      "min_crew": 4
+    },
+    {
+      "id": 21,
+      "flight_num": "1023",
+      "origin": "MIA",
+      "dest": "ORD",
+      "dep_min": 5330,
+      "arr_min": 5439,
+      "duration": 109,
+      "min_crew": 3
+    },
+    {
+      "id": 22,
+      "flight_num": "1024",
+      "origin": "JFK",
+      "dest": "LAX",
+      "dep_min": 6120,
+      "arr_min": 6360,
+      "duration": 240,
+      "min_crew": 4
+    },
+    {
+      "id": 23,
+      "flight_num": "1025",
+      "origin": "LAX",
+      "dest": "JFK",
+      "dep_min": 470,
+      "arr_min": 670,
+      "duration": 200,
+      "min_crew": 3
+    },
+    {
+      "id": 24,
+      "flight_num": "1026",
+      "origin": "JFK",
+      "dest": "ORD",
+      "dep_min": 1980,
+      "arr_min": 2068,
+      "duration": 88,
+      "min_crew": 3
+    },
+    {
+      "id": 25,
+      "flight_num": "1027",
+      "origin": "ORD",
+      "dest": "JFK",
+      "dep_min": 3530,
+      "arr_min": 3618,
+      "duration": 88,
+      "min_crew": 4
+    },
+    {
+      "id": 26,
+      "flight_num": "1028",
+      "origin": "JFK",
+      "dest": "MIA",
+      "dep_min": 5040,
+      "arr_min": 5175,
+      "duration": 135,
+      "min_crew": 3
+    },
+    {
+      "id": 27,
+      "flight_num": "1029",
+      "origin": "MIA",
+      "dest": "JFK",
+      "dep_min": 6590,
+      "arr_min": 6685,
+      "duration": 95,
+      "min_crew": 3
+    }
+  ],
+  "routes": [
+    {
+      "crew_id": 0,
+      "base": "JFK",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 360,
+          "arr": 600,
+          "flight_id": 0
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 1910,
+          "arr": 2110,
+          "flight_id": 1
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 3420,
+          "arr": 3508,
+          "flight_id": 2
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 3530,
+          "arr": 3618,
+          "flight_id": 25
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 5040,
+          "arr": 5175,
+          "flight_id": 26
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 6590,
+          "arr": 6685,
+          "flight_id": 27
+        }
+      ]
+    },
+    {
+      "crew_id": 1,
+      "base": "JFK",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 360,
+          "arr": 600,
+          "flight_id": 0
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "ORD",
+          "dep": 2340,
+          "arr": 2522,
+          "flight_id": 6
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 3530,
+          "arr": 3618,
+          "flight_id": 25
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 5040,
+          "arr": 5175,
+          "flight_id": 26
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 6590,
+          "arr": 6685,
+          "flight_id": 27
+        }
+      ]
+    },
+    {
+      "crew_id": 2,
+      "base": "JFK",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 360,
+          "arr": 600,
+          "flight_id": 0
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "ORD",
+          "dep": 2340,
+          "arr": 2522,
+          "flight_id": 6
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 3530,
+          "arr": 3618,
+          "flight_id": 25
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 5040,
+          "arr": 5175,
+          "flight_id": 26
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 6590,
+          "arr": 6685,
+          "flight_id": 27
+        }
+      ]
+    },
+    {
+      "crew_id": 3,
+      "base": "JFK",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 360,
+          "arr": 600,
+          "flight_id": 0
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "ORD",
+          "dep": 2340,
+          "arr": 2522,
+          "flight_id": 6
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 3530,
+          "arr": 3618,
+          "flight_id": 25
+        }
+      ]
+    },
+    {
+      "crew_id": 4,
+      "base": "JFK",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 360,
+          "arr": 600,
+          "flight_id": 0
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "MIA",
+          "dep": 720,
+          "arr": 997,
+          "flight_id": 19
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 3350,
+          "arr": 3445,
+          "flight_id": 16
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 3600,
+          "arr": 3840,
+          "flight_id": 11
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 5150,
+          "arr": 5350,
+          "flight_id": 12
+        }
+      ]
+    },
+    {
+      "crew_id": 5,
+      "base": "LAX",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 470,
+          "arr": 670,
+          "flight_id": 23
+        },
+        {
+          "type": "deadhead",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 1800,
+          "arr": 1935,
+          "flight_id": 15
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "ORD",
+          "dep": 2090,
+          "arr": 2199,
+          "flight_id": 10
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 4970,
+          "arr": 5058,
+          "flight_id": 3
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 6120,
+          "arr": 6360,
+          "flight_id": 22
+        }
+      ]
+    },
+    {
+      "crew_id": 6,
+      "base": "LAX",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 470,
+          "arr": 670,
+          "flight_id": 23
+        },
+        {
+          "type": "deadhead",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 1800,
+          "arr": 1935,
+          "flight_id": 15
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "ORD",
+          "dep": 2090,
+          "arr": 2199,
+          "flight_id": 10
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 4970,
+          "arr": 5058,
+          "flight_id": 3
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 6120,
+          "arr": 6360,
+          "flight_id": 22
+        }
+      ]
+    },
+    {
+      "crew_id": 7,
+      "base": "LAX",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 470,
+          "arr": 670,
+          "flight_id": 23
+        },
+        {
+          "type": "deadhead",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 1800,
+          "arr": 1935,
+          "flight_id": 15
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "ORD",
+          "dep": 2090,
+          "arr": 2199,
+          "flight_id": 10
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "LAX",
+          "dep": 3890,
+          "arr": 4032,
+          "flight_id": 7
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "MIA",
+          "dep": 4680,
+          "arr": 4957,
+          "flight_id": 8
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "ORD",
+          "dep": 5330,
+          "arr": 5439,
+          "flight_id": 21
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "LAX",
+          "dep": 6410,
+          "arr": 6552,
+          "flight_id": 18
+        }
+      ]
+    },
+    {
+      "crew_id": 8,
+      "base": "LAX",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 1910,
+          "arr": 2110,
+          "flight_id": 1
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 3420,
+          "arr": 3508,
+          "flight_id": 2
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "LAX",
+          "dep": 3890,
+          "arr": 4032,
+          "flight_id": 7
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "MIA",
+          "dep": 4680,
+          "arr": 4957,
+          "flight_id": 8
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "ORD",
+          "dep": 5330,
+          "arr": 5439,
+          "flight_id": 21
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "LAX",
+          "dep": 6410,
+          "arr": 6552,
+          "flight_id": 18
+        }
+      ]
+    },
+    {
+      "crew_id": 9,
+      "base": "LAX",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 1910,
+          "arr": 2110,
+          "flight_id": 1
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 3420,
+          "arr": 3508,
+          "flight_id": 2
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "LAX",
+          "dep": 3890,
+          "arr": 4032,
+          "flight_id": 7
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "MIA",
+          "dep": 4680,
+          "arr": 4957,
+          "flight_id": 8
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "ORD",
+          "dep": 5330,
+          "arr": 5439,
+          "flight_id": 21
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "LAX",
+          "dep": 6410,
+          "arr": 6552,
+          "flight_id": 18
+        }
+      ]
+    },
+    {
+      "crew_id": 10,
+      "base": "MIA",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 830,
+          "arr": 925,
+          "flight_id": 5
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 1980,
+          "arr": 2068,
+          "flight_id": 24
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 4970,
+          "arr": 5058,
+          "flight_id": 3
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 6480,
+          "arr": 6615,
+          "flight_id": 4
+        }
+      ]
+    },
+    {
+      "crew_id": 11,
+      "base": "MIA",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 830,
+          "arr": 925,
+          "flight_id": 5
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 1980,
+          "arr": 2068,
+          "flight_id": 24
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 4970,
+          "arr": 5058,
+          "flight_id": 3
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 6480,
+          "arr": 6615,
+          "flight_id": 4
+        }
+      ]
+    },
+    {
+      "crew_id": 12,
+      "base": "MIA",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 830,
+          "arr": 925,
+          "flight_id": 5
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 1980,
+          "arr": 2068,
+          "flight_id": 24
+        },
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 4970,
+          "arr": 5058,
+          "flight_id": 3
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 6480,
+          "arr": 6615,
+          "flight_id": 4
+        }
+      ]
+    },
+    {
+      "crew_id": 13,
+      "base": "MIA",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 3350,
+          "arr": 3445,
+          "flight_id": 16
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 3600,
+          "arr": 3840,
+          "flight_id": 11
+        },
+        {
+          "type": "deadhead",
+          "from": "LAX",
+          "to": "MIA",
+          "dep": 4680,
+          "arr": 4957,
+          "flight_id": 8
+        }
+      ]
+    },
+    {
+      "crew_id": 14,
+      "base": "MIA",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "JFK",
+          "dep": 3350,
+          "arr": 3445,
+          "flight_id": 16
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 3600,
+          "arr": 3840,
+          "flight_id": 11
+        },
+        {
+          "type": "deadhead",
+          "from": "LAX",
+          "to": "MIA",
+          "dep": 4680,
+          "arr": 4957,
+          "flight_id": 8
+        }
+      ]
+    },
+    {
+      "crew_id": 15,
+      "base": "ORD",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 1010,
+          "arr": 1098,
+          "flight_id": 14
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 1800,
+          "arr": 1935,
+          "flight_id": 15
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "LAX",
+          "dep": 2270,
+          "arr": 2507,
+          "flight_id": 20
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "ORD",
+          "dep": 4860,
+          "arr": 5042,
+          "flight_id": 17
+        }
+      ]
+    },
+    {
+      "crew_id": 16,
+      "base": "ORD",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 1010,
+          "arr": 1098,
+          "flight_id": 14
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 1800,
+          "arr": 1935,
+          "flight_id": 15
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "LAX",
+          "dep": 2270,
+          "arr": 2507,
+          "flight_id": 20
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "ORD",
+          "dep": 4860,
+          "arr": 5042,
+          "flight_id": 17
+        }
+      ]
+    },
+    {
+      "crew_id": 17,
+      "base": "ORD",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 1010,
+          "arr": 1098,
+          "flight_id": 14
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 1800,
+          "arr": 1935,
+          "flight_id": 15
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "LAX",
+          "dep": 2270,
+          "arr": 2507,
+          "flight_id": 20
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 5150,
+          "arr": 5350,
+          "flight_id": 12
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 6660,
+          "arr": 6748,
+          "flight_id": 13
+        }
+      ]
+    },
+    {
+      "crew_id": 18,
+      "base": "ORD",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 1010,
+          "arr": 1098,
+          "flight_id": 14
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "MIA",
+          "dep": 1800,
+          "arr": 1935,
+          "flight_id": 15
+        },
+        {
+          "type": "flight",
+          "from": "MIA",
+          "to": "LAX",
+          "dep": 2270,
+          "arr": 2507,
+          "flight_id": 20
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 5150,
+          "arr": 5350,
+          "flight_id": 12
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 6660,
+          "arr": 6748,
+          "flight_id": 13
+        }
+      ]
+    },
+    {
+      "crew_id": 19,
+      "base": "ORD",
+      "crew_count": 1,
+      "legs": [
+        {
+          "type": "flight",
+          "from": "ORD",
+          "to": "JFK",
+          "dep": 1010,
+          "arr": 1098,
+          "flight_id": 14
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "LAX",
+          "dep": 3600,
+          "arr": 3840,
+          "flight_id": 11
+        },
+        {
+          "type": "flight",
+          "from": "LAX",
+          "to": "JFK",
+          "dep": 5150,
+          "arr": 5350,
+          "flight_id": 12
+        },
+        {
+          "type": "flight",
+          "from": "JFK",
+          "to": "ORD",
+          "dep": 6660,
+          "arr": 6748,
+          "flight_id": 13
+        }
+      ]
+    }
+  ],
+  "uncovered_flights": [
+    {
+      "flight_num": "1006",
+      "origin": "LAX",
+      "dest": "ORD",
+      "dep_min": 2340,
+      "arr_min": 2522,
+      "missing_slots": 1.0
+    },
+    {
+      "flight_num": "1020",
+      "origin": "LAX",
+      "dest": "MIA",
+      "dep_min": 720,
+      "arr_min": 997,
+      "missing_slots": 2.0
+    },
+    {
+      "flight_num": "1009",
+      "origin": "MIA",
+      "dest": "LAX",
+      "dep_min": 6230,
+      "arr_min": 6467,
+      "missing_slots": 4.0
+    },
+    {
+      "flight_num": "1018",
+      "origin": "LAX",
+      "dest": "ORD",
+      "dep_min": 4860,
+      "arr_min": 5042,
+      "missing_slots": 2.0
+    },
+    {
+      "flight_num": "1024",
+      "origin": "JFK",
+      "dest": "LAX",
+      "dep_min": 6120,
+      "arr_min": 6360,
+      "missing_slots": 2.0
+    }
+  ]
+}
