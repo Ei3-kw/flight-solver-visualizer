@@ -31,7 +31,7 @@
 			(info) => {
 				tooltip = info.object ? { x: info.x, y: info.y, arc: info.object } : null;
 			},
-			(arc) => appState.selectRoute(routesRef.get(arc.routeKey) ?? null)
+			(arc) => appState.selectRoute(routesRef.get(arc.routeKey) ?? null, arc.status !== 'deadhead' ? arc.status : null)
 		);
 
 		const airportLayers = buildAirportLayers(processed.airports, (airport) =>

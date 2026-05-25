@@ -158,12 +158,10 @@
 					<!-- Assigned crew -->
 					<div>
 						<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-white/35">
-							Assigned crew{#if appState.selectedFlight.crewDataAvailable} ({appState.selectedFlight.actual_crew}/{appState.selectedFlight.min_crew}){/if}
+							Assigned crew ({appState.selectedFlight.actual_crew}/{appState.selectedFlight.min_crew})
 						</div>
-						{#if !appState.selectedFlight.crewDataAvailable}
-							<div class="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/30 italic">Pre-assigned — not included in this export</div>
-						{:else if appState.selectedFlight.assigned_crew.length === 0}
-							<div class="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/30">None assigned</div>
+						{#if appState.selectedFlight.assigned_crew.length === 0}
+							<div class="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/30">Unassigned</div>
 						{:else}
 							<div class="flex flex-col gap-1.5">
 								{#each appState.selectedFlight.assigned_crew as cid}
@@ -311,22 +309,36 @@
 		<!-- ══════════ ROUTE FLIGHT LIST ══════════ -->
 		{:else if appState.panelView === 'route' && appState.selectedRoute}
 			{#key appState.selectedRoute.key}
+				{@const allFlights = appState.selectedRoute.flights}
+				{@const visibleFlights = [...allFlights].filter(f => {
+					if (appState.selectedRouteStatus && f.status !== appState.selectedRouteStatus) return false;
+					if (f.status === 'covered'   && !appState.showCovered)   return false;
+					if (f.status === 'partial'   && !appState.showPartial)   return false;
+					if (f.status === 'uncovered' && !appState.showUncovered) return false;
+					return true;
+				}).sort((a, b) => a.dep_min - b.dep_min)}
+
 				<div class="border-b border-white/8 px-4 py-3">
 					<div class="text-base font-bold text-white">{appState.selectedRoute.origin} → {appState.selectedRoute.dest}</div>
 					<div class="mt-0.5 flex gap-3 text-xs text-white/40">
-						<span>{appState.selectedRoute.flights.length} flight{appState.selectedRoute.flights.length !== 1 ? 's' : ''}</span>
+						<span>{visibleFlights.length}{visibleFlights.length !== allFlights.length ? `/${allFlights.length}` : ''} flight{allFlights.length !== 1 ? 's' : ''}</span>
 						{#if appState.selectedRoute.deadheadCount > 0}
 							<span class="text-purple-400/70">{appState.selectedRoute.deadheadCount} DH</span>
 						{/if}
-						<span>Σ {appState.selectedRoute.totalCrew} crew movements</span>
+						{#if appState.selectedRouteStatus}
+							<span class="capitalize" style="color:{appState.selectedRouteStatus === 'covered' ? '#22c55e' : appState.selectedRouteStatus === 'partial' ? '#f97316' : '#ef4444'}">
+								{appState.selectedRouteStatus} only
+							</span>
+							<button onclick={() => appState.selectRoute(appState.selectedRoute, null)} class="text-white/25 hover:text-white/60">show all</button>
+						{/if}
 					</div>
 				</div>
 
-				<!-- Coverage bar -->
-				{@const total = appState.selectedRoute.flights.length}
-				{@const nCov = appState.selectedRoute.flights.filter(f => f.status === 'covered').length}
-				{@const nPar = appState.selectedRoute.flights.filter(f => f.status === 'partial').length}
-				{@const nUnc = appState.selectedRoute.flights.filter(f => f.status === 'uncovered').length}
+				<!-- Coverage bar (always full route) -->
+				{@const total = allFlights.length}
+				{@const nCov = allFlights.filter(f => f.status === 'covered').length}
+				{@const nPar = allFlights.filter(f => f.status === 'partial').length}
+				{@const nUnc = allFlights.filter(f => f.status === 'uncovered').length}
 				<div class="flex h-1 shrink-0 overflow-hidden">
 					{#if nCov > 0}<div class="bg-green-500"  style="width:{(nCov / total) * 100}%"></div>{/if}
 					{#if nPar > 0}<div class="bg-orange-500" style="width:{(nPar / total) * 100}%"></div>{/if}
@@ -334,24 +346,28 @@
 				</div>
 
 				<div class="flex flex-col divide-y divide-white/5">
-					{#each [...appState.selectedRoute.flights].sort((a, b) => a.dep_min - b.dep_min) as flight}
-						<button
-							onclick={() => appState.selectFlight(flight)}
-							class="group flex items-center gap-3 px-4 py-3 text-left transition hover:bg-white/5"
-						>
-							<span class="h-2 w-2 shrink-0 rounded-full {STATUS_DOT[flight.status]}"></span>
-							<div class="min-w-0 flex-1">
-								<div class="flex items-baseline justify-between">
-									<span class="font-medium">#{flight.flight_num}</span>
-									<span class="{STATUS_TEXT[flight.status]} text-xs">{flight.actual_crew}/{flight.min_crew}</span>
+					{#if visibleFlights.length === 0}
+						<div class="px-4 py-6 text-center text-xs text-white/25">No flights match the active filters</div>
+					{:else}
+						{#each visibleFlights as flight}
+							<button
+								onclick={() => appState.selectFlight(flight)}
+								class="group flex items-center gap-3 px-4 py-3 text-left transition hover:bg-white/5"
+							>
+								<span class="h-2 w-2 shrink-0 rounded-full {STATUS_DOT[flight.status]}"></span>
+								<div class="min-w-0 flex-1">
+									<div class="flex items-baseline justify-between">
+										<span class="font-medium">#{flight.flight_num}</span>
+										<span class="{STATUS_TEXT[flight.status]} text-xs">{flight.actual_crew}/{flight.min_crew}</span>
+									</div>
+									<div class="mt-0.5 text-xs text-white/35">{formatMinutes(flight.dep_min)}</div>
 								</div>
-								<div class="mt-0.5 text-xs text-white/35">{formatMinutes(flight.dep_min)}</div>
-							</div>
-							<svg class="h-4 w-4 shrink-0 text-white/15 transition group-hover:text-white/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M9 18l6-6-6-6"/>
-							</svg>
-						</button>
-					{/each}
+								<svg class="h-4 w-4 shrink-0 text-white/15 transition group-hover:text-white/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M9 18l6-6-6-6"/>
+								</svg>
+							</button>
+						{/each}
+					{/if}
 				</div>
 			{/key}
 
@@ -413,14 +429,17 @@
 											>{d}</button>
 										{/each}
 									</div>
-									<div class="mt-2 flex items-center gap-1 text-xs">
-										<input type="number" min="0" max="23" value={startDHM.h}
-											oninput={(e) => pickStartTime(+(e.target as HTMLInputElement).value, startDHM.m)}
-											class="w-11 rounded bg-white/10 px-1.5 py-1 text-center text-white/80 outline-none" />
-										<span class="text-white/30">:</span>
-										<input type="number" min="0" max="59" step="5" value={startDHM.m}
-											oninput={(e) => pickStartTime(startDHM.h, +(e.target as HTMLInputElement).value)}
-											class="w-11 rounded bg-white/10 px-1.5 py-1 text-center text-white/80 outline-none" />
+									<div class="mt-3">
+										<div class="mb-1 text-center text-xs font-medium text-white/70">
+											{String(startDHM.h).padStart(2,'0')}:{String(startDHM.m).padStart(2,'0')}
+										</div>
+										<input type="range" min="0" max="1439" step="5"
+											value={startDHM.h * 60 + startDHM.m}
+											oninput={(e) => { const v = +(e.target as HTMLInputElement).value; pickStartTime(Math.floor(v/60), v%60); }}
+											class="w-full accent-blue-500" />
+										<div class="mt-0.5 flex justify-between text-[9px] text-white/20">
+											<span>00:00</span><span>12:00</span><span>23:55</span>
+										</div>
 									</div>
 								</div>
 							{/if}
@@ -445,14 +464,17 @@
 											>{d}</button>
 										{/each}
 									</div>
-									<div class="mt-2 flex items-center gap-1 text-xs">
-										<input type="number" min="0" max="23" value={endDHM.h}
-											oninput={(e) => pickEndTime(+(e.target as HTMLInputElement).value, endDHM.m)}
-											class="w-11 rounded bg-white/10 px-1.5 py-1 text-center text-white/80 outline-none" />
-										<span class="text-white/30">:</span>
-										<input type="number" min="0" max="59" step="5" value={endDHM.m}
-											oninput={(e) => pickEndTime(endDHM.h, +(e.target as HTMLInputElement).value)}
-											class="w-11 rounded bg-white/10 px-1.5 py-1 text-center text-white/80 outline-none" />
+									<div class="mt-3">
+										<div class="mb-1 text-center text-xs font-medium text-white/70">
+											{String(endDHM.h).padStart(2,'0')}:{String(endDHM.m).padStart(2,'0')}
+										</div>
+										<input type="range" min="0" max="1439" step="5"
+											value={endDHM.h * 60 + endDHM.m}
+											oninput={(e) => { const v = +(e.target as HTMLInputElement).value; pickEndTime(Math.floor(v/60), v%60); }}
+											class="w-full accent-blue-500" />
+										<div class="mt-0.5 flex justify-between text-[9px] text-white/20">
+											<span>00:00</span><span>12:00</span><span>23:55</span>
+										</div>
 									</div>
 								</div>
 							{/if}

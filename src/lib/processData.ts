@@ -48,12 +48,12 @@ export function processData(data: ScheduleData, timeStart: number, timeEnd: numb
 
 		let status: FlightStatus;
 		if (uncoveredMap.has(uncoveredKey)) {
-			// Solver explicitly flagged this flight
 			status = missing >= f.min_crew ? 'uncovered' : 'partial';
+		} else if (actual === 0 && f.min_crew > 0) {
+			status = 'uncovered';
+		} else if (actual < f.min_crew) {
+			status = 'partial';
 		} else {
-			// Not in uncovered_flights → solver considers it covered.
-			// The flow decomposition can silently drop crew paths, so actual < min_crew
-			// here does NOT reliably indicate partial coverage — trust the solver.
 			status = 'covered';
 		}
 

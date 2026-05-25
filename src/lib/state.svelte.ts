@@ -1,9 +1,10 @@
-import type { ScheduleData, FlightInfo, RouteData, AirportInfo } from './types';
+import type { ScheduleData, FlightInfo, RouteData, AirportInfo, FlightStatus } from './types';
 
 class AppState {
 	data = $state<ScheduleData | null>(null);
 	timeRange = $state<[number, number]>([0, 0]);
 	selectedRoute = $state<RouteData | null>(null);
+	selectedRouteStatus = $state<FlightStatus | null>(null);
 	selectedFlight = $state<FlightInfo | null>(null);
 	selectedAirport = $state<AirportInfo | null>(null);
 	showDeadheads = $state(true);
@@ -32,8 +33,9 @@ class AppState {
 		this.selectedAirport = null;
 	}
 
-	selectRoute(route: RouteData | null) {
+	selectRoute(route: RouteData | null, statusFilter: FlightStatus | null = null) {
 		this.selectedRoute = route;
+		this.selectedRouteStatus = statusFilter;
 		this.selectedFlight = null;
 		this.selectedAirport = null;
 	}
