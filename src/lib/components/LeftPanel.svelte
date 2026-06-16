@@ -175,6 +175,13 @@
 		appState.currentTime = Math.max(0, Math.min(appState.horizon, fromDHM(day, h, m)));
 	}
 
+	// Two-clock work summary: block duty work since the last 8h overnight rest, and the
+	// wall-clock time away from home since the crew last left base after a 48h home break.
+	function workedSummary(crew: { dutyWorkedMin: number; homeWorkedMin: number }) {
+		const duty = crew.dutyWorkedMin > 0 ? `${formatDuration(crew.dutyWorkedMin)} duty` : 'No duty this period';
+		return crew.homeWorkedMin > 0 ? `${duty} · ${formatDuration(crew.homeWorkedMin)} since home` : duty;
+	}
+
 	const startDHM = $derived(toDHM(appState.timeRange[0]));
 	const endDHM   = $derived(toDHM(appState.timeRange[1]));
 
@@ -436,7 +443,7 @@
 											<span class="rounded bg-green-500/20 px-1.5 py-0.5 text-[10px] font-medium text-green-400">Available</span>
 										</div>
 										<div class="flex items-center justify-between text-[10px] text-white/40">
-											<span>{crew.hoursWorkedMin > 0 ? `${Math.floor(crew.hoursWorkedMin / 60)}h ${crew.hoursWorkedMin % 60}m worked` : 'No duty this period'}</span>
+											<span>{workedSummary(crew)}</span>
 											{#if crew.nextLeg}
 												<span class="text-sky-400/70">Next: {crew.nextLeg.from}→{crew.nextLeg.to}</span>
 											{/if}
@@ -469,7 +476,7 @@
 											</span>
 										</div>
 										<div class="flex items-center justify-between text-[10px] text-white/40">
-											<span>{Math.floor(crew.hoursWorkedMin / 60)}h {crew.hoursWorkedMin % 60}m worked</span>
+											<span>{workedSummary(crew)}</span>
 											{#if crew.breakRemainingMin !== null}
 												<span class="{crew.breakType === 'home_48h' ? 'text-purple-400/80' : crew.breakType === 'rest_8h' ? 'text-sky-400/80' : crew.breakType === 'turnaround_45m' ? 'text-yellow-400/80' : 'text-orange-400/80'}">
 													{Math.floor(crew.breakRemainingMin / 60)}h {crew.breakRemainingMin % 60}m to clear
@@ -510,7 +517,7 @@
 											<span class="rounded bg-green-500/20 px-1.5 py-0.5 text-[10px] font-medium text-green-400">Available</span>
 										</div>
 										<div class="flex items-center justify-between text-[10px] text-white/40">
-											<span>{crew.hoursWorkedMin > 0 ? `${Math.floor(crew.hoursWorkedMin / 60)}h ${crew.hoursWorkedMin % 60}m worked` : 'No duty this period'}</span>
+											<span>{workedSummary(crew)}</span>
 											{#if crew.nextLeg}
 												<span class="text-sky-400/70">Next: {crew.nextLeg.from}→{crew.nextLeg.to}</span>
 											{/if}
@@ -543,7 +550,7 @@
 											</span>
 										</div>
 										<div class="flex items-center justify-between text-[10px] text-white/40">
-											<span>{Math.floor(crew.hoursWorkedMin / 60)}h {crew.hoursWorkedMin % 60}m worked</span>
+											<span>{workedSummary(crew)}</span>
 											{#if crew.breakRemainingMin !== null}
 												<span class="{crew.breakType === 'home_48h' ? 'text-purple-400/80' : crew.breakType === 'rest_8h' ? 'text-sky-400/80' : crew.breakType === 'turnaround_45m' ? 'text-yellow-400/80' : 'text-orange-400/80'}">
 													{Math.floor(crew.breakRemainingMin / 60)}h {crew.breakRemainingMin % 60}m to clear

@@ -76,7 +76,8 @@ export function computeCrewGroundStatus(
 				available: true,
 				breakType: null,
 				breakRemainingMin: null,
-				hoursWorkedMin: 0,
+				dutyWorkedMin: 0,
+				homeWorkedMin: 0,
 				arrivedVia: null,
 				nextLeg: null
 			}
@@ -87,7 +88,7 @@ export function computeCrewGroundStatus(
 	const activeLeg = legs.find(l => l.dep <= currentTime && l.arr >= currentTime);
 	if (activeLeg) {
 		// They're airborne right now — not on the ground
-		return { location: null, crewInfo: { id: crewId, base, available: false, breakType: null, breakRemainingMin: null, hoursWorkedMin: 0, arrivedVia: null, nextLeg: null } };
+		return { location: null, crewInfo: { id: crewId, base, available: false, breakType: null, breakRemainingMin: null, dutyWorkedMin: 0, homeWorkedMin: 0, arrivedVia: null, nextLeg: null } };
 	}
 
 	// Find the most recent completed leg (arr <= currentTime)
@@ -102,7 +103,8 @@ export function computeCrewGroundStatus(
 				available: true,
 				breakType: null,
 				breakRemainingMin: null,
-				hoursWorkedMin: 0,
+				dutyWorkedMin: 0,
+				homeWorkedMin: 0,
 				arrivedVia: null,
 				nextLeg: legs[0] ?? null
 			}
@@ -117,6 +119,29 @@ export function computeCrewGroundStatus(
 	// Find next scheduled leg
 	const futurelegs = legs.filter(l => l.dep > currentTime).sort((a, b) => a.dep - b.dep);
 	const nextLeg = futurelegs[0] ?? null;
+
+	// ── Duty clock ─────────────────────────────────────────────────────────────
+	// dutyWorkedMin — block work since the last >=8h OVERNIGHT rest (the current duty
+	// period). Resets on any >=8h gap (and naturally on a >=48h home break too). This is
+	// the figure the 14h MAX_DUTY cap is checked against.
+	const allLegs = [...legs].sort((a, b) => a.dep - b.dep);
+	let dutyWorkedMin = 0;
+	for (let i = 0; i < allLegs.length; i++) {
+		const leg = allLegs[i];
+		if (leg.dep > currentTime) break;
+		const worked = Math.min(leg.arr, currentTime) - leg.dep;
+		if (i === 0) {
+			dutyWorkedMin = worked;
+			continue;
+		}
+		const prevLeg = allLegs[i - 1];
+		if (prevLeg.arr > currentTime) break;
+		const gap = leg.dep - prevLeg.arr;
+		// Any >=8h gap (overnight rest or longer) starts a fresh duty period.
+		dutyWorkedMin = gap >= REST_DUTY_CLEAR_MIN ? worked : dutyWorkedMin + worked;
+	}
+	// Idle since the last landing — used to detect an in-progress / completed break.
+	const idleMin = currentTime - lastLeg.arr;
 
 	// ── 48h home break ─────────────────────────────────────────────────────────
 	// A crew sitting at home base for >=48h is on a home break (purple). The 14h-duty
@@ -138,13 +163,40 @@ export function computeCrewGroundStatus(
 		...solverHomeBreaks.filter(s => !derived.some(d => d.start === s.start))
 	];
 	const activeBreak = homeBreaks.find(w => currentTime >= w.start && currentTime < w.end);
+
+	// ── Home / away clock ──────────────────────────────────────────────────────
+	// homeWorkedMin — wall-clock time the crew has been "away" on the current trip:
+	// from when they FIRST left home base after their last >=48h home break, up to NOW —
+	// or frozen at the home-break START while they are on a home break. Mirrors the
+	// solver's away budget: brief touches at base do NOT reset it; only a completed
+	// >=48h home stay re-anchors the start. (This is wall-clock elapsed, not block work.)
+	const HOME_ANCHOR_NONE = -1;
+	let awaySince = HOME_ANCHOR_NONE; // dep of the first leave-home after the last break
+	let homeSince: number | null = null; // arrival that began the current home stay
+	for (const l of allLegs) {
+		if (l.dep > currentTime) break;
+		if (l.from === base && l.to !== base) {
+			// Leaving home: seed on first-ever departure, re-anchor only if the stay we're
+			// leaving was itself a completed >=48h home break.
+			if (awaySince === HOME_ANCHOR_NONE) awaySince = l.dep;
+			else if (homeSince !== null && l.dep - homeSince >= HOME_BREAK_MIN) awaySince = l.dep;
+			homeSince = null;
+		}
+		if (l.to === base && l.arr <= currentTime && homeSince === null) homeSince = l.arr;
+	}
+	// On a home break iff currently sitting in a >=48h home stay (its window starts at
+	// this arrival). In that case the away clock freezes at the break start.
+	const onHomeBreak = lastLeg.to === base && homeBreaks.some(w => w.start === lastLeg.arr);
+	const homeClockEnd = onHomeBreak ? lastLeg.arr : currentTime;
+	const homeWorkedMin = awaySince === HOME_ANCHOR_NONE ? 0 : Math.max(0, homeClockEnd - awaySince);
+
 	if (activeBreak) {
 		return {
 			location,
 			crewInfo: {
 				id: crewId, base, available: false, breakType: 'home_48h',
 				breakRemainingMin: Math.max(0, activeBreak.end - currentTime),
-				hoursWorkedMin: 0, arrivedVia: lastLeg, nextLeg
+				dutyWorkedMin, homeWorkedMin, arrivedVia: lastLeg, nextLeg
 			}
 		};
 	}
@@ -156,72 +208,27 @@ export function computeCrewGroundStatus(
 			crewInfo: {
 				id: crewId, base, available: false, breakType: 'turnaround_45m',
 				breakRemainingMin: DELTA_TA - (currentTime - lastLeg.arr),
-				hoursWorkedMin: 0, arrivedVia: lastLeg, nextLeg
+				dutyWorkedMin, homeWorkedMin, arrivedVia: lastLeg, nextLeg
 			}
 		};
 	}
 
-	// ── Compute hours worked since last rest break ────────────────────────────
-	// Walk backwards through all legs to find where the last rest window started.
-	// A "rest break" is defined as a gap between consecutive legs of at least:
-	//   - HOME_BREAK_MIN (48h) at home base → resets everything
-	//   - REST_DUTY_CLEAR_MIN (8h) at any station → clears duty counter
-	// We accumulate flying time backward from currentTime until we hit a rest break.
-	const allLegs = [...legs].sort((a, b) => a.dep - b.dep);
-	let hoursWorkedMin = 0;
-	let lastRestEnd = 0; // start of the current duty period
-
-	// Walk forward through legs, tracking gaps
-	for (let i = 0; i < allLegs.length; i++) {
-		const leg = allLegs[i];
-		if (leg.dep > currentTime) break;
-
-		if (i === 0) {
-			// First leg start — no rest gap to check before it
-			lastRestEnd = leg.dep;
-			hoursWorkedMin = Math.min(leg.arr, currentTime) - leg.dep;
-			continue;
-		}
-
-		const prevLeg = allLegs[i - 1];
-		if (prevLeg.arr > currentTime) break;
-		const gap = leg.dep - prevLeg.arr;
-		const atBase = prevLeg.to === base;
-
-		if (atBase && gap >= HOME_BREAK_MIN) {
-			// 48h home break — full reset
-			lastRestEnd = leg.dep;
-			hoursWorkedMin = Math.min(leg.arr, currentTime) - leg.dep;
-		} else if (gap >= REST_DUTY_CLEAR_MIN) {
-			// 8h rest anywhere — resets duty counter
-			lastRestEnd = leg.dep;
-			hoursWorkedMin = Math.min(leg.arr, currentTime) - leg.dep;
-		} else {
-			// No break — accumulate
-			hoursWorkedMin += Math.min(leg.arr, currentTime) - leg.dep;
-		}
-	}
-
 	// ── Determine availability ────────────────────────────────────────────────
-	// Wall-clock duty time: elapsed from start of duty spell to last landing.
-	// More meaningful than pure block time (which skips ground waits between legs).
-	const dutyTimeMin = lastRestEnd > 0 ? lastLeg.arr - lastRestEnd : hoursWorkedMin;
-	// Gap since last leg ended
-	const idleMin = currentTime - lastLeg.arr;
-
 	// Check if current idle time constitutes a rest break
 	if (lastLeg.to === base && idleMin >= HOME_BREAK_MIN) {
-		// Completed a 48h home break — fully available
+		// Completed a 48h home break — fully available; duty clock reset. The home/away
+		// clock stays frozen at this break's start (homeWorkedMin) until they next depart.
 		return {
 			location,
-			crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, hoursWorkedMin: 0, arrivedVia: lastLeg, nextLeg }
+			crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, dutyWorkedMin: 0, homeWorkedMin, arrivedVia: lastLeg, nextLeg }
 		};
 	}
 	if (idleMin >= REST_DUTY_CLEAR_MIN) {
-		// Completed an 8h rest — duty counter resets
+		// Completed an 8h overnight rest — duty clock resets, but the home clock keeps
+		// the work accumulated since the last 48h home break.
 		return {
 			location,
-			crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, hoursWorkedMin: 0, arrivedVia: lastLeg, nextLeg }
+			crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, dutyWorkedMin: 0, homeWorkedMin, arrivedVia: lastLeg, nextLeg }
 		};
 	}
 
@@ -234,13 +241,13 @@ export function computeCrewGroundStatus(
 			crewInfo: {
 				id: crewId, base, available: false, breakType: 'rest_8h',
 				breakRemainingMin: REST_DUTY_CLEAR_MIN - idleMin,
-				hoursWorkedMin: dutyTimeMin, arrivedVia: lastLeg, nextLeg
+				dutyWorkedMin, homeWorkedMin, arrivedVia: lastLeg, nextLeg
 			}
 		};
 	}
 
 	// Check if they need a break (exceeded max duty or approaching)
-	if (hoursWorkedMin >= MAX_DUTY_MIN) {
+	if (dutyWorkedMin >= MAX_DUTY_MIN) {
 		// Requires 8h rest at minimum; if at base, counts towards 48h break
 		const isAtBase = location === base;
 		const breakType: BreakType = isAtBase ? 'home_48h' : 'duty_14h';
@@ -248,14 +255,14 @@ export function computeCrewGroundStatus(
 		const breakRemaining = Math.max(0, breakRequired - idleMin);
 		return {
 			location,
-			crewInfo: { id: crewId, base, available: false, breakType, breakRemainingMin: breakRemaining, hoursWorkedMin, arrivedVia: lastLeg, nextLeg }
+			crewInfo: { id: crewId, base, available: false, breakType, breakRemainingMin: breakRemaining, dutyWorkedMin, homeWorkedMin, arrivedVia: lastLeg, nextLeg }
 		};
 	}
 
 	// Within duty limits — available
 	return {
 		location,
-		crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, hoursWorkedMin, arrivedVia: lastLeg, nextLeg }
+		crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, dutyWorkedMin, homeWorkedMin, arrivedVia: lastLeg, nextLeg }
 	};
 }
 
@@ -633,7 +640,8 @@ export function processData(
 					available: true,
 					breakType: null,
 					breakRemainingMin: null,
-					hoursWorkedMin: 0,
+					dutyWorkedMin: 0,
+					homeWorkedMin: 0,
 					arrivedVia: null,
 					nextLeg: null
 				});

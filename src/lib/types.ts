@@ -114,8 +114,12 @@ export interface CrewAtAirport {
 	breakType: BreakType | null;
 	/** Minutes remaining until break is complete (null if available) */
 	breakRemainingMin: number | null;
-	/** Total flight+deadhead minutes worked since last rest break */
-	hoursWorkedMin: number;
+	/** Block work (min) since the last >=8h overnight rest — the current duty period.
+	 *  Resets on any >=8h rest (and on a 48h home break). */
+	dutyWorkedMin: number;
+	/** Block work (min) since the last completed >=48h HOME break. Does NOT reset on an
+	 *  8h overnight rest, so it accumulates across duty periods until a home break. */
+	homeWorkedMin: number;
 	/** Which leg they're currently "between" — arrived via this leg */
 	arrivedVia: RouteLeg | null;
 	/** Their next scheduled leg (if any) */
