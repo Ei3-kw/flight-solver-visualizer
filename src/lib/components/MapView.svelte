@@ -18,7 +18,10 @@
 
 	const processed = $derived(
 		appState.data
-			? processData(appState.data, appState.timeRange[0], appState.timeRange[1])
+			? processData(appState.data, appState.currentTime, appState.currentTime, appState.focusedCrewId, {
+					a: appState.filterAirportA,
+					b: appState.filterAirportB
+				})
 			: null
 	);
 
@@ -51,6 +54,9 @@
 		void appState.showCovered;
 		void appState.showPartial;
 		void appState.showUncovered;
+		void appState.focusedCrewId;
+		void appState.filterAirportA;
+		void appState.filterAirportB;
 
 		routesRef = p?.routes ?? new Map();
 		airportsRef = p?.airports ?? new Map();

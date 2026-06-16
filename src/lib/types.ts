@@ -18,11 +18,20 @@ export interface RouteLeg {
 	flight_id: number | null;
 }
 
+export interface BreakWindow {
+	start: number;
+	end: number;
+	type: BreakType;
+}
+
 export interface CrewRoute {
 	crew_id: number;
 	base: string;
 	crew_count: number;
 	legs: RouteLeg[];
+	/** Authoritative unavailability windows emitted by the solver (e.g. mandatory
+	 *  48h home breaks). When present, the viz reads these instead of re-deriving. */
+	breaks?: BreakWindow[];
 }
 
 export interface UncoveredFlight {
@@ -88,6 +97,31 @@ export interface RouteData {
 	deadheadCount: number;
 }
 
+/** How a crew member's unavailability should be cleared */
+export type BreakType = 'duty_14h' | 'home_48h' | 'rest_8h' | 'turnaround_45m';
+
+/** A crew member currently on the ground at an airport */
+export interface CrewAtAirport {
+	id: number;
+	base: string;
+	/** Is this their home base? */
+	isHome: boolean;
+	/** Are they visiting (not based here)? */
+	isVisiting: boolean;
+	/** Currently available for duty */
+	available: boolean;
+	/** If unavailable, what kind of break clears them */
+	breakType: BreakType | null;
+	/** Minutes remaining until break is complete (null if available) */
+	breakRemainingMin: number | null;
+	/** Total flight+deadhead minutes worked since last rest break */
+	hoursWorkedMin: number;
+	/** Which leg they're currently "between" — arrived via this leg */
+	arrivedVia: RouteLeg | null;
+	/** Their next scheduled leg (if any) */
+	nextLeg: RouteLeg | null;
+}
+
 export interface AirportInfo {
 	iata: string;
 	coords: [number, number];
@@ -96,4 +130,6 @@ export interface AirportInfo {
 	arrivingCrewCount: number; // unique crew arriving in window
 	flightsFrom: FlightInfo[];
 	flightsTo: FlightInfo[];
+	/** Crew currently on the ground at this airport at currentTime */
+	crewOnGround: CrewAtAirport[];
 }

@@ -5,18 +5,23 @@ import { appState } from './state.svelte';
 type RGBA = [number, number, number, number];
 
 export const STATUS_COLORS: Record<string, RGBA> = {
-	covered: [34, 197, 94, 210],
-	partial: [249, 115, 22, 210],
-	uncovered: [239, 68, 68, 230],
-	deadhead: [168, 85, 247, 170]
+	covered:   [34,  197,  94, 200],
+	partial:   [249, 115,  22, 210],
+	uncovered: [239,  68,  68, 255],
+	deadhead:  [168,  85, 247, 170]
 };
 
 const STATUS_HEIGHT: Record<string, number> = {
-	covered: 0.45,
-	partial: 0.58,
-	uncovered: 0.7,
-	deadhead: 0.3
+	covered:   0.4,
+	partial:   0.55,
+	uncovered: 0.72,   // arc noticeably higher than covered on same route
+	deadhead:  0.28
 };
+
+// Render order: covered bottom → partial → uncovered top.
+// Separate ArcLayer per status so deck.gl never lets a green arc overwrite
+// a red one at the same pixel when they share an origin hub like ORD.
+const STATUS_ORDER = ['covered', 'partial', 'uncovered'] as const;
 
 export function buildArcLayers(
 	arcs: ArcRenderData[],
@@ -26,40 +31,71 @@ export function buildArcLayers(
 ) {
 	const selectedKey = appState.selectedRoute?.key;
 
-	const visibleArcs = arcs.filter((a) => {
-		if (a.status === 'covered' && !appState.showCovered) return false;
-		if (a.status === 'partial' && !appState.showPartial) return false;
-		if (a.status === 'uncovered' && !appState.showUncovered) return false;
-		return true;
-	});
+	const visibilityFilter: Record<string, boolean> = {
+		covered:   appState.showCovered,
+		partial:   appState.showPartial,
+		uncovered: appState.showUncovered
+	};
 
-	const arcLayer = new ArcLayer<ArcRenderData>({
-		id: 'flight-arcs',
-		data: visibleArcs,
-		getSourcePosition: (d) => d.sourcePosition,
-		getTargetPosition: (d) => d.targetPosition,
-		getSourceColor: (d) =>
+	// Split arcs into per-status buckets
+	const buckets: Record<string, ArcRenderData[]> = {
+		covered: [], partial: [], uncovered: []
+	};
+	for (const arc of arcs) {
+		if (visibilityFilter[arc.status] !== false) {
+			buckets[arc.status]?.push(arc);
+		}
+	}
+
+	const commonProps = (status: string) => ({
+		getSourcePosition: (d: ArcRenderData) => d.sourcePosition,
+		getTargetPosition: (d: ArcRenderData) => d.targetPosition,
+		getSourceColor: (d: ArcRenderData) =>
 			selectedKey && d.routeKey === selectedKey
 				? ([255, 255, 255, 240] as RGBA)
 				: (STATUS_COLORS[d.status] ?? STATUS_COLORS.covered),
-		getTargetColor: (d) =>
+		getTargetColor: (d: ArcRenderData) =>
 			selectedKey && d.routeKey === selectedKey
 				? ([255, 255, 255, 240] as RGBA)
 				: (STATUS_COLORS[d.status] ?? STATUS_COLORS.covered),
-		getWidth: (d) => Math.min(8, Math.max(1, Math.log2(d.count + 1) * 2)),
-		widthUnits: 'pixels',
-		getHeight: (d) => STATUS_HEIGHT[d.status] ?? 0.5,
+		widthUnits: 'pixels' as const,
+		getHeight: STATUS_HEIGHT[status] ?? 0.5,
 		pickable: true,
 		autoHighlight: true,
-		highlightColor: [255, 255, 255, 60],
+		highlightColor: [255, 255, 255, 60] as RGBA,
 		onHover,
-		onClick: (info) => {
-			if (info.object) onClick(info.object as ArcRenderData);
+		onClick: (info: { object?: ArcRenderData }) => {
+			if (info.object) onClick(info.object);
 		},
 		updateTriggers: {
 			getSourceColor: [selectedKey],
 			getTargetColor: [selectedKey]
 		}
+	});
+
+	// Covered + partial: width scales with flight count (thicker = busier route)
+	const coveredLayer = new ArcLayer<ArcRenderData>({
+		id: 'flight-arcs-covered',
+		data: buckets.covered,
+		getWidth: (d) => Math.min(6, Math.max(1, Math.log2(d.count + 1) * 2)),
+		...commonProps('covered')
+	});
+
+	const partialLayer = new ArcLayer<ArcRenderData>({
+		id: 'flight-arcs-partial',
+		data: buckets.partial,
+		getWidth: (d) => Math.min(6, Math.max(2, Math.log2(d.count + 1) * 2)),
+		...commonProps('partial')
+	});
+
+	// Uncovered: fixed 3px minimum so a single uncovered flight on a busy
+	// route (e.g. ORD→IND with 10 covered + 1 uncovered) is never invisible.
+	// Height 0.72 lifts it above the covered arc on the same origin→dest pair.
+	const uncoveredLayer = new ArcLayer<ArcRenderData>({
+		id: 'flight-arcs-uncovered',
+		data: buckets.uncovered,
+		getWidth: (_d) => 3,
+		...commonProps('uncovered')
 	});
 
 	const dhLayer = appState.showDeadheads
@@ -77,7 +113,8 @@ export function buildArcLayers(
 			})
 		: null;
 
-	return [dhLayer, arcLayer].filter(Boolean);
+	// deadheads → covered → partial → uncovered (last = rendered on top)
+	return [dhLayer, coveredLayer, partialLayer, uncoveredLayer].filter(Boolean);
 }
 
 export function buildAirportLayers(
@@ -86,17 +123,23 @@ export function buildAirportLayers(
 ) {
 	const nodes = Array.from(airports.values());
 	const selectedIata = appState.selectedAirport?.iata;
+	const filterA = appState.filterAirportA;
+	const filterB = appState.filterAirportB;
 
-	// Dot layer
 	const dotLayer = new ScatterplotLayer<AirportInfo>({
 		id: 'airports',
 		data: nodes,
 		getPosition: (d) => d.coords,
 		getFillColor: (d) => {
+			// Filtered airports get a bright amber ring-fill so the active filter is obvious.
+			if (d.iata === filterA || d.iata === filterB) return [251, 191, 36, 255] as RGBA;
 			if (d.iata === selectedIata) return [255, 255, 255, 240] as RGBA;
 			return d.basedCrew.length > 0 ? ([59, 130, 246, 220] as RGBA) : ([140, 140, 160, 180] as RGBA);
 		},
-		getRadius: (d) => Math.min(10, Math.max(4, Math.log2(d.basedCrew.length + 2) * 3.5)),
+		getRadius: (d) =>
+			d.iata === filterA || d.iata === filterB
+				? 9
+				: Math.min(10, Math.max(4, Math.log2(d.basedCrew.length + 2) * 3.5)),
 		radiusUnits: 'pixels',
 		pickable: true,
 		autoHighlight: true,
@@ -104,10 +147,12 @@ export function buildAirportLayers(
 		onClick: (info) => {
 			if (info.object) onAirportClick(info.object as AirportInfo);
 		},
-		updateTriggers: { getFillColor: [selectedIata] }
+		updateTriggers: {
+			getFillColor: [selectedIata, filterA, filterB],
+			getRadius: [filterA, filterB]
+		}
 	});
 
-	// Label: airport IATA code
 	const labelLayer = new TextLayer<AirportInfo>({
 		id: 'airport-labels',
 		data: nodes,
@@ -121,45 +166,47 @@ export function buildAirportLayers(
 		pickable: false
 	});
 
-	// Based crew count — top-right of dot (blue)
-	const basedCountLayer = new TextLayer<AirportInfo>({
-		id: 'airport-based',
-		data: nodes.filter((d) => d.basedCrew.length > 0),
-		getPosition: (d) => d.coords,
-		getText: (d) => String(d.basedCrew.length),
-		getSize: 12,
-		getColor: [96, 165, 250, 220], // blue-400
-		getPixelOffset: [16, -8],
-		fontFamily: 'monospace',
-		fontWeight: 'bold',
-		pickable: false
-	});
+	// ── Four-corner crew badge ─────────────────────────────────────────────────
+	// Each airport marker shows up to four counts at its corners, all describing
+	// crew currently ON THE GROUND at this airport:
+	//   top-left     based     (blue)   – home base is this airport
+	//   top-right    available (green)  – ready for duty
+	//   bottom-left  visiting  (yellow) – on the ground here but based elsewhere
+	//   bottom-right break     (red)    – unavailable (48h home / 14h duty break)
+	// Left column splits by origin (home vs visiting); right column by status
+	// (available vs break). Each column sums to the on-ground total.
+	const CORNERS: Array<{
+		key: string;
+		color: RGBA;
+		offset: [number, number];
+		count: (d: AirportInfo) => number;
+	}> = [
+		{ key: 'based',     color: [96, 165, 250, 235], offset: [-15, -11],
+		  count: (d) => d.crewOnGround.filter((c) => c.isHome).length },
+		{ key: 'available', color: [74, 222, 128, 235], offset: [15, -11],
+		  count: (d) => d.crewOnGround.filter((c) => c.available).length },
+		{ key: 'visiting',  color: [251, 191, 36, 235], offset: [-15, 11],
+		  count: (d) => d.crewOnGround.filter((c) => c.isVisiting).length },
+		{ key: 'break',     color: [239, 68, 68, 245],  offset: [15, 11],
+		  count: (d) => d.crewOnGround.filter((c) => !c.available).length }
+	];
 
-	// Departing crew — right of dot (green)
-	const departingLayer = new TextLayer<AirportInfo>({
-		id: 'airport-departing',
-		data: nodes.filter((d) => d.departingCrewCount > 0),
-		getPosition: (d) => d.coords,
-		getText: (d) => `↑${d.departingCrewCount}`,
-		getSize: 10,
-		getColor: [74, 222, 128, 200], // green-400
-		getPixelOffset: [18, 4],
-		fontFamily: 'monospace',
-		pickable: false
-	});
+	const cornerLayers = CORNERS.map((cfg) =>
+		new TextLayer<AirportInfo>({
+			id: `airport-corner-${cfg.key}`,
+			data: nodes.filter((d) => cfg.count(d) > 0),
+			getPosition: (d) => d.coords,
+			getText: (d) => String(cfg.count(d)),
+			getSize: 11,
+			getColor: cfg.color,
+			getPixelOffset: cfg.offset,
+			getTextAnchor: cfg.offset[0] < 0 ? 'end' : 'start',
+			getAlignmentBaseline: cfg.offset[1] < 0 ? 'bottom' : 'top',
+			fontFamily: 'monospace',
+			fontWeight: 'bold',
+			pickable: false
+		})
+	);
 
-	// Arriving crew — left of dot (amber)
-	const arrivingLayer = new TextLayer<AirportInfo>({
-		id: 'airport-arriving',
-		data: nodes.filter((d) => d.arrivingCrewCount > 0),
-		getPosition: (d) => d.coords,
-		getText: (d) => `↓${d.arrivingCrewCount}`,
-		getSize: 10,
-		getColor: [251, 191, 36, 200], // amber-400
-		getPixelOffset: [-18, 4],
-		fontFamily: 'monospace',
-		pickable: false
-	});
-
-	return [dotLayer, labelLayer, basedCountLayer, departingLayer, arrivingLayer];
+	return [dotLayer, labelLayer, ...cornerLayers];
 }

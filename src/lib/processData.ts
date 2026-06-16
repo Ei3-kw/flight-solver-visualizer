@@ -4,9 +4,260 @@ import type {
 	ArcRenderData,
 	RouteData,
 	AirportInfo,
-	FlightStatus
+	FlightStatus,
+	CrewAtAirport,
+	BreakType,
+	RouteLeg
 } from './types';
 import { getAirportCoords } from './airports';
+
+// ── Duty / availability rules ─────────────────────────────────────────────────
+// Max continuous duty window before a rest break is required.
+const MAX_DUTY_MIN = 14 * 60; // 14 hours
+// Overnight rest to clear duty counter (at a non-home station).
+const REST_DUTY_CLEAR_MIN = 8 * 60; // 8 hours continuous rest
+const DELTA_TA = 45;           // min ground time between consecutive legs
+// Home base rest to reset fully (48-hour break).
+const HOME_BREAK_MIN = 48 * 60; // 48 hours
+/**
+ * Home-break windows derived from a crew's legs: every continuous stay at home base
+ * lasting >= HOME_BREAK_MIN (48h) is a home break, shown for the first 48h of that
+ * stay. This is the PHYSICAL definition — a crew benched at home for >=48h is resting,
+ * regardless of why — and is what the viz displays (purple).
+ *
+ * It is a strict SUPERSET of the solver's emitted `breaks`: the solver only flags
+ * MANDATORY breaks (stays that followed a maxed-out duty-day streak, see
+ * derive_home_breaks() in crew_ddd_v2.py), so it omits incidental long home rests —
+ * e.g. a hub-based crew that keeps dipping through base never trips the duty cap, yet
+ * still sits home for days (crew 116 in result_ZW.json: ~70h at ORD from Day 3, which
+ * the solver leaves out of `breaks`). Deriving from base-stays here reproduces every
+ * mandatory window AND surfaces those incidental rests.
+ *
+ * NB the away-spell heuristic this replaced was modeling the wrong quantity (time AWAY
+ * from base, not time AT base), so it both missed real home rests and invented phantom
+ * ones.
+ */
+function homeBreakWindows(base: string, legs: RouteLeg[]): { start: number; end: number; type: BreakType }[] {
+	if (!base || legs.length === 0) return [];
+	const seq = [...legs].sort((a, b) => a.dep - b.dep);
+	const out: { start: number; end: number; type: BreakType }[] = [];
+	for (let i = 0; i < seq.length; i++) {
+		const l = seq[i];
+		if (l.to !== base) continue;
+		// Time benched at base = gap until the next departure (∞ if this is the last leg).
+		const stay = i + 1 < seq.length ? seq[i + 1].dep - l.arr : Infinity;
+		if (stay >= HOME_BREAK_MIN) {
+			out.push({ start: l.arr, end: l.arr + HOME_BREAK_MIN, type: 'home_48h' });
+		}
+	}
+	return out;
+}
+
+/**
+ * Given a crew's route and a point in time, determine:
+ *  - where they are on the ground (airport IATA), or null if airborne
+ *  - hours worked since last rest break
+ *  - availability status
+ */
+export function computeCrewGroundStatus(
+	crewId: number,
+	base: string,
+	legs: RouteLeg[],
+	currentTime: number,
+	breaks?: { start: number; end: number; type: BreakType }[]
+): { location: string | null; crewInfo: Omit<CrewAtAirport, 'isHome' | 'isVisiting'> } {
+	if (legs.length === 0) {
+		// No route — crew is at base, fully available, 0 hours worked
+		return {
+			location: base,
+			crewInfo: {
+				id: crewId,
+				base,
+				available: true,
+				breakType: null,
+				breakRemainingMin: null,
+				hoursWorkedMin: 0,
+				arrivedVia: null,
+				nextLeg: null
+			}
+		};
+	}
+
+	// Find what they're doing at currentTime
+	const activeLeg = legs.find(l => l.dep <= currentTime && l.arr >= currentTime);
+	if (activeLeg) {
+		// They're airborne right now — not on the ground
+		return { location: null, crewInfo: { id: crewId, base, available: false, breakType: null, breakRemainingMin: null, hoursWorkedMin: 0, arrivedVia: null, nextLeg: null } };
+	}
+
+	// Find the most recent completed leg (arr <= currentTime)
+	const pastLegs = legs.filter(l => l.arr <= currentTime);
+	if (pastLegs.length === 0) {
+		// Haven't started yet — at base
+		return {
+			location: base,
+			crewInfo: {
+				id: crewId,
+				base,
+				available: true,
+				breakType: null,
+				breakRemainingMin: null,
+				hoursWorkedMin: 0,
+				arrivedVia: null,
+				nextLeg: legs[0] ?? null
+			}
+		};
+	}
+
+	// Sort past legs by arrival
+	const sortedPast = [...pastLegs].sort((a, b) => a.arr - b.arr);
+	const lastLeg = sortedPast[sortedPast.length - 1];
+	const location = lastLeg.to;
+
+	// Find next scheduled leg
+	const futurelegs = legs.filter(l => l.dep > currentTime).sort((a, b) => a.dep - b.dep);
+	const nextLeg = futurelegs[0] ?? null;
+
+	// ── 48h home break ─────────────────────────────────────────────────────────
+	// A crew sitting at home base for >=48h is on a home break (purple). The 14h-duty
+	// / 8h-rest logic below does NOT model this — its 8h-rest reset would otherwise
+	// mark a benched crew "available" — so check it FIRST, taking precedence.
+	//
+	// We derive the windows from the crew's legs (every >=48h base stay) rather than
+	// reading the solver's `breaks` field, because that field carries only MANDATORY
+	// breaks (those after a maxed-out duty streak) and omits incidental long home
+	// rests the user still wants shown — e.g. crew 116, hub-based at ORD, sits home
+	// ~70h from Day 3 but the solver leaves it out of `breaks`. The base-stay
+	// derivation is a strict superset of `breaks`, so it reproduces every mandatory
+	// window and adds the incidental ones. We union with the solver's home_48h
+	// windows defensively, in case a future export emits one we can't re-derive.
+	const derived = homeBreakWindows(base, legs);
+	const solverHomeBreaks = breaks?.filter(b => b.type === 'home_48h') ?? [];
+	const homeBreaks = [
+		...derived,
+		...solverHomeBreaks.filter(s => !derived.some(d => d.start === s.start))
+	];
+	const activeBreak = homeBreaks.find(w => currentTime >= w.start && currentTime < w.end);
+	if (activeBreak) {
+		return {
+			location,
+			crewInfo: {
+				id: crewId, base, available: false, breakType: 'home_48h',
+				breakRemainingMin: Math.max(0, activeBreak.end - currentTime),
+				hoursWorkedMin: 0, arrivedVia: lastLeg, nextLeg
+			}
+		};
+	}
+
+	// ── 45-min turnaround: physically can't depart before this clears ─────────
+	if (currentTime - lastLeg.arr < DELTA_TA) {
+		return {
+			location,
+			crewInfo: {
+				id: crewId, base, available: false, breakType: 'turnaround_45m',
+				breakRemainingMin: DELTA_TA - (currentTime - lastLeg.arr),
+				hoursWorkedMin: 0, arrivedVia: lastLeg, nextLeg
+			}
+		};
+	}
+
+	// ── Compute hours worked since last rest break ────────────────────────────
+	// Walk backwards through all legs to find where the last rest window started.
+	// A "rest break" is defined as a gap between consecutive legs of at least:
+	//   - HOME_BREAK_MIN (48h) at home base → resets everything
+	//   - REST_DUTY_CLEAR_MIN (8h) at any station → clears duty counter
+	// We accumulate flying time backward from currentTime until we hit a rest break.
+	const allLegs = [...legs].sort((a, b) => a.dep - b.dep);
+	let hoursWorkedMin = 0;
+	let lastRestEnd = 0; // start of the current duty period
+
+	// Walk forward through legs, tracking gaps
+	for (let i = 0; i < allLegs.length; i++) {
+		const leg = allLegs[i];
+		if (leg.dep > currentTime) break;
+
+		if (i === 0) {
+			// First leg start — no rest gap to check before it
+			lastRestEnd = leg.dep;
+			hoursWorkedMin = Math.min(leg.arr, currentTime) - leg.dep;
+			continue;
+		}
+
+		const prevLeg = allLegs[i - 1];
+		if (prevLeg.arr > currentTime) break;
+		const gap = leg.dep - prevLeg.arr;
+		const atBase = prevLeg.to === base;
+
+		if (atBase && gap >= HOME_BREAK_MIN) {
+			// 48h home break — full reset
+			lastRestEnd = leg.dep;
+			hoursWorkedMin = Math.min(leg.arr, currentTime) - leg.dep;
+		} else if (gap >= REST_DUTY_CLEAR_MIN) {
+			// 8h rest anywhere — resets duty counter
+			lastRestEnd = leg.dep;
+			hoursWorkedMin = Math.min(leg.arr, currentTime) - leg.dep;
+		} else {
+			// No break — accumulate
+			hoursWorkedMin += Math.min(leg.arr, currentTime) - leg.dep;
+		}
+	}
+
+	// ── Determine availability ────────────────────────────────────────────────
+	// Wall-clock duty time: elapsed from start of duty spell to last landing.
+	// More meaningful than pure block time (which skips ground waits between legs).
+	const dutyTimeMin = lastRestEnd > 0 ? lastLeg.arr - lastRestEnd : hoursWorkedMin;
+	// Gap since last leg ended
+	const idleMin = currentTime - lastLeg.arr;
+
+	// Check if current idle time constitutes a rest break
+	if (lastLeg.to === base && idleMin >= HOME_BREAK_MIN) {
+		// Completed a 48h home break — fully available
+		return {
+			location,
+			crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, hoursWorkedMin: 0, arrivedVia: lastLeg, nextLeg }
+		};
+	}
+	if (idleMin >= REST_DUTY_CLEAR_MIN) {
+		// Completed an 8h rest — duty counter resets
+		return {
+			location,
+			crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, hoursWorkedMin: 0, arrivedVia: lastLeg, nextLeg }
+		};
+	}
+
+	// In-progress 8h mandatory rest: gap before next leg is ≥8h (or no next leg),
+	// meaning this is a genuine inter-duty rest, not a short turnaround.
+	const isInterDutyRest = nextLeg === null || (nextLeg.dep - lastLeg.arr) >= REST_DUTY_CLEAR_MIN;
+	if (isInterDutyRest) {
+		return {
+			location,
+			crewInfo: {
+				id: crewId, base, available: false, breakType: 'rest_8h',
+				breakRemainingMin: REST_DUTY_CLEAR_MIN - idleMin,
+				hoursWorkedMin: dutyTimeMin, arrivedVia: lastLeg, nextLeg
+			}
+		};
+	}
+
+	// Check if they need a break (exceeded max duty or approaching)
+	if (hoursWorkedMin >= MAX_DUTY_MIN) {
+		// Requires 8h rest at minimum; if at base, counts towards 48h break
+		const isAtBase = location === base;
+		const breakType: BreakType = isAtBase ? 'home_48h' : 'duty_14h';
+		const breakRequired = isAtBase ? HOME_BREAK_MIN : REST_DUTY_CLEAR_MIN;
+		const breakRemaining = Math.max(0, breakRequired - idleMin);
+		return {
+			location,
+			crewInfo: { id: crewId, base, available: false, breakType, breakRemainingMin: breakRemaining, hoursWorkedMin, arrivedVia: lastLeg, nextLeg }
+		};
+	}
+
+	// Within duty limits — available
+	return {
+		location,
+		crewInfo: { id: crewId, base, available: true, breakType: null, breakRemainingMin: null, hoursWorkedMin, arrivedVia: lastLeg, nextLeg }
+	};
+}
 
 export interface ProcessedData {
 	arcs: ArcRenderData[];
@@ -16,8 +267,87 @@ export interface ProcessedData {
 	unknownAirports: Set<string>;
 }
 
-export function processData(data: ScheduleData, timeStart: number, timeEnd: number): ProcessedData {
+/**
+ * Compute a perpendicular offset vector for a pair of airports, always derived
+ * from the same canonical direction (alphabetically first → second) regardless
+ * of which airport is the flight's origin/destination.
+ *
+ * This ensures that ORD→COU (side +1) and COU→ORD (side -1) are nudged to
+ * *opposite* sides of the great-circle path rather than the same side, which
+ * would happen if each arc computed its own perpendicular from its own bearing
+ * (since swapping src/dst produces the same perpendicular vector).
+ */
+function canonicalPerpendicularOffset(
+	a: [number, number],
+	b: [number, number],
+	aIata: string,
+	bIata: string,
+	side: 1 | -1,
+	distDeg = 0.15
+): { aSide: [number, number]; bSide: [number, number] } {
+	// Always compute dx/dy from the alphabetically-first IATA toward the second
+	// so both directions of a route share the same reference vector.
+	const [first, second] = aIata < bIata ? [a, b] : [b, a];
+	const dx = second[0] - first[0];
+	const dy = second[1] - first[1];
+	const len = Math.sqrt(dx * dx + dy * dy) || 1;
+	const px = (-dy / len) * distDeg * side;
+	const py = ( dx / len) * distDeg * side;
+	return {
+		aSide: [a[0] + px, a[1] + py] as [number, number],
+		bSide: [b[0] + px, b[1] + py] as [number, number]
+	};
+}
+
+/**
+ * Legacy offset helper: shifts an arc sideways relative to its own bearing.
+ * Used for uncovered/partial arcs on routes that also have covered flights
+ * (same direction — no bidirectional collision, so any consistent offset is fine).
+ */
+function perpendicularOffset(
+	src: [number, number],
+	dst: [number, number],
+	side: 1 | -1 = 1,
+	distDeg = 0.15
+): [[number, number], [number, number]] {
+	const dx = dst[0] - src[0];
+	const dy = dst[1] - src[1];
+	const len = Math.sqrt(dx * dx + dy * dy) || 1;
+	const px = (-dy / len) * distDeg * side;
+	const py = ( dx / len) * distDeg * side;
+	return [
+		[src[0] + px, src[1] + py],
+		[dst[0] + px, dst[1] + py]
+	];
+}
+
+/**
+ * Airport filter predicate for a leg/flight (origin → dest):
+ *  - no airport selected → everything passes
+ *  - only A selected → flights that touch A (depart from or arrive at it)
+ *  - A and B selected → only flights between A and B, in either direction
+ */
+function passesAirportFilter(
+	origin: string,
+	dest: string,
+	a: string | null,
+	b: string | null
+): boolean {
+	if (!a) return true;
+	if (!b) return origin === a || dest === a;
+	return (origin === a && dest === b) || (origin === b && dest === a);
+}
+
+export function processData(
+	data: ScheduleData,
+	timeStart: number,
+	timeEnd: number,
+	crewId: number | null = null,
+	airportFilter: { a: string | null; b: string | null } | null = null
+): ProcessedData {
 	const { flights, routes, uncovered_flights } = data;
+	const fa = airportFilter?.a ?? null;
+	const fb = airportFilter?.b ?? null;
 
 	// Build crew assignments per flight
 	// flight_id can be null for commercial deadhead arcs — skip those
@@ -33,17 +363,23 @@ export function processData(data: ScheduleData, timeStart: number, timeEnd: numb
 			else entry.deadhead.push(route.crew_id);
 		}
 	}
-	// Uncovered slots index — key by (flight_num, dep_min) so repeated flight numbers across days don't collide
+
+	// Uncovered slots index — keyed by (origin:dest:dep_min) for unambiguous matching.
+	// Previously used (flight_num:dep_min) which silently missed flights when the
+	// flight_num in uncovered_flights didn't exactly match the one in flights[],
+	// e.g. due to type coercion or leading-zero differences. Using origin+dest+dep_min
+	// is structurally guaranteed to match since save_result() copies those fields
+	// from the same Flight object into both arrays.
 	const uncoveredMap = new Map<string, number>();
 	for (const uf of uncovered_flights) {
-		uncoveredMap.set(`${uf.flight_num}:${uf.dep_min}`, uf.missing_slots);
+		uncoveredMap.set(`${uf.origin}:${uf.dest}:${uf.dep_min}`, uf.missing_slots);
 	}
 
 	// Enrich all flights with status
 	const flightInfos: FlightInfo[] = flights.map((f) => {
 		const crew = flightCrew.get(f.id);
 		const actual = crew?.flight.length ?? 0;
-		const uncoveredKey = `${f.flight_num}:${f.dep_min}`;
+		const uncoveredKey = `${f.origin}:${f.dest}:${f.dep_min}`;
 		const missing = Math.round(uncoveredMap.get(uncoveredKey) ?? 0);
 
 		let status: FlightStatus;
@@ -68,10 +404,41 @@ export function processData(data: ScheduleData, timeStart: number, timeEnd: numb
 		};
 	});
 
-	// Filter to time window
-	const windowFlights = flightInfos.filter((f) => f.dep_min >= timeStart && f.dep_min <= timeEnd);
+	// If crewId filter is active, build the set of flight IDs that crew member operates
+	const crewFlightIds: Set<number> | null = crewId !== null
+		? (() => {
+			const ids = new Set<number>();
+			const crewRoute = routes.find(r => r.crew_id === crewId);
+			if (crewRoute) {
+				for (const leg of crewRoute.legs) {
+					if (leg.flight_id !== null) ids.add(leg.flight_id);
+				}
+			}
+			return ids;
+		})()
+		: null;
+
+	// The map always shows a time snapshot: only flights airborne at currentTime
+	// (dep <= time <= arr). The airport filter further narrows that snapshot to flights
+	// touching the selected airport(s). The full whole-schedule in/out list lives in the
+	// sidebar's expandable list instead, so the map never floods with every arc.
+	const windowFlights = flightInfos.filter((f) => {
+		if (f.dep_min > timeStart || f.arr_min < timeEnd) return false;
+		if (crewFlightIds !== null && !crewFlightIds.has(f.id)) return false;
+		if (!passesAirportFilter(f.origin, f.dest, fa, fb)) return false;
+		return true;
+	});
 
 	const unknownAirports = new Set<string>();
+
+	// Track which routeKeys have at least one covered flight so we know whether
+	// to offset the uncovered arc sideways (avoids pixel overlap on busy routes).
+	const routeHasCovered = new Set<string>();
+	for (const flight of windowFlights) {
+		if (flight.status === 'covered') {
+			routeHasCovered.add(`${flight.origin}→${flight.dest}`);
+		}
+	}
 
 	// Group by (origin, dest) for RouteData and (origin, dest, status) for ArcRenderData
 	const routeMap = new Map<string, RouteData>();
@@ -105,14 +472,58 @@ export function processData(data: ScheduleData, timeStart: number, timeEnd: numb
 
 		// ArcRenderData (split by status for multi-line coloring)
 		if (!arcMap.has(arcKey)) {
+			const reverseKey = `${flight.dest}→${flight.origin}:${flight.status}`;
+			const hasCoveredOnRoute = routeHasCovered.has(routeKey);
+			const hasReverseArc = arcMap.has(reverseKey);
+			const needsOffset =
+				(flight.status === 'uncovered' || flight.status === 'partial') &&
+				(hasCoveredOnRoute || hasReverseArc);
+
+			let arcSrc: [number, number];
+			let arcDst: [number, number];
+
+			if (needsOffset && hasReverseArc) {
+				// A reverse-direction arc already exists at the same endpoints.
+				// deck.gl draws ORD→COU and COU→ORD as the same symmetric curve,
+				// so we must push them to *opposite* sides of the path.
+				// Use a canonical offset vector (derived from alphabetically-first
+				// IATA → second) so both arcs are nudged in truly opposite directions
+				// rather than the same direction (which is what happens when each arc
+				// calls perpendicularOffset with its own swapped src/dst).
+				const rev = arcMap.get(reverseKey)!;
+				const revSrcCoords = getAirportCoords(flight.dest)!;
+				const revDstCoords = getAirportCoords(flight.origin)!;
+				const revOffset = canonicalPerpendicularOffset(
+					revSrcCoords, revDstCoords,
+					flight.dest, flight.origin,
+					-1
+				);
+				rev.sourcePosition = revOffset.aSide;
+				rev.targetPosition = revOffset.bSide;
+
+				const fwdOffset = canonicalPerpendicularOffset(
+					src, dst,
+					flight.origin, flight.dest,
+					1
+				);
+				arcSrc = fwdOffset.aSide;
+				arcDst = fwdOffset.bSide;
+			} else if (needsOffset) {
+				// Covered+uncovered on same one-way route — legacy offset is fine.
+				[arcSrc, arcDst] = perpendicularOffset(src, dst, 1);
+			} else {
+				arcSrc = src;
+				arcDst = dst;
+			}
+
 			arcMap.set(arcKey, {
 				key: arcKey,
 				routeKey,
 				origin: flight.origin,
 				dest: flight.dest,
 				status: flight.status,
-				sourcePosition: src,
-				targetPosition: dst,
+				sourcePosition: arcSrc,
+				targetPosition: arcDst,
 				count: 0
 			});
 		}
@@ -125,7 +536,9 @@ export function processData(data: ScheduleData, timeStart: number, timeEnd: numb
 	for (const route of routes) {
 		for (const leg of route.legs) {
 			if (leg.type !== 'deadhead') continue;
-			if (leg.dep < timeStart || leg.dep > timeEnd) continue;
+			if (leg.dep > timeStart || leg.arr < timeEnd) continue;
+			if (crewId !== null && route.crew_id !== crewId) continue; // crew filter
+			if (!passesAirportFilter(leg.from, leg.to, fa, fb)) continue; // airport filter
 
 			const src = getAirportCoords(leg.from);
 			const dst = getAirportCoords(leg.to);
@@ -170,14 +583,62 @@ export function processData(data: ScheduleData, timeStart: number, timeEnd: numb
 			departingCrewCount: 0,
 			arrivingCrewCount: 0,
 			flightsFrom: [],
-			flightsTo: []
+			flightsTo: [],
+			crewOnGround: []
 		});
 	}
+
+	// Keep the filtered airport(s) on the map even when nothing is airborne to/from
+	// them at this instant, so the user can always see what they've selected.
+	if (fa) ensureAirport(fa);
+	if (fb) ensureAirport(fb);
 
 	// Seed from crew bases
 	for (const c of data.crew) {
 		ensureAirport(c.base);
 		airportMap.get(c.base)?.basedCrew.push(c.id);
+	}
+
+	// Compute which crew are on the ground at each airport at currentTime
+	// (use timeStart as the current snapshot time)
+	for (const route of routes) {
+		const crewRecord = data.crew.find(c => c.id === route.crew_id);
+		const base = crewRecord?.base ?? route.base ?? '?';
+		const { location, crewInfo } = computeCrewGroundStatus(route.crew_id, base, route.legs, timeStart, route.breaks);
+		if (location !== null) {
+			ensureAirport(location);
+			const apt = airportMap.get(location);
+			if (apt) {
+				apt.crewOnGround.push({
+					...crewInfo,
+					isHome: location === base,
+					isVisiting: location !== base
+				});
+			}
+		}
+	}
+
+	// Also add crew with no routes who are implicitly at their base
+	const routedCrewIds = new Set(routes.map(r => r.crew_id));
+	for (const c of data.crew) {
+		if (!routedCrewIds.has(c.id)) {
+			ensureAirport(c.base);
+			const apt = airportMap.get(c.base);
+			if (apt) {
+				apt.crewOnGround.push({
+					id: c.id,
+					base: c.base,
+					isHome: true,
+					isVisiting: false,
+					available: true,
+					breakType: null,
+					breakRemainingMin: null,
+					hoursWorkedMin: 0,
+					arrivedVia: null,
+					nextLeg: null
+				});
+			}
+		}
 	}
 
 	// Seed from window flights
@@ -194,7 +655,9 @@ export function processData(data: ScheduleData, timeStart: number, timeEnd: numb
 
 	for (const route of routes) {
 		for (const leg of route.legs) {
-			if (leg.dep < timeStart || leg.dep > timeEnd) continue;
+			if (leg.dep > timeStart || leg.arr < timeEnd) continue;
+			if (crewId !== null && route.crew_id !== crewId) continue; // only airborne deadheads
+			if (crewId !== null && route.crew_id !== crewId) continue; // crew filter
 			if (!departingSet.has(leg.from)) departingSet.set(leg.from, new Set());
 			if (!arrivingSet.has(leg.to)) arrivingSet.set(leg.to, new Set());
 			departingSet.get(leg.from)!.add(route.crew_id);
