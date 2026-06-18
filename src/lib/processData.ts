@@ -11,6 +11,61 @@ import type {
 } from './types';
 import { getAirportCoords } from './airports';
 
+// ── Two-layer (senior + normal) support ───────────────────────────────────────
+// Normal crew ids are offset by this in the two-layer combiner so they never collide
+// with senior ids (mirrors NORMAL_ID_OFFSET in crew_two_layer.py). Used as a fallback
+// to classify crew when an export predates the explicit `is_senior` flag.
+const NORMAL_ID_OFFSET = 1_000_000;
+
+export interface LayerContext {
+	isTwoLayer: boolean;
+	seniorIds: Set<number>;
+}
+
+/** Detect a two-layer result and collect the senior crew ids. */
+export function layerContext(data: ScheduleData): LayerContext {
+	const seniorIds = new Set<number>();
+	let hasFlag = false;
+	for (const c of data.crew) {
+		if (c.is_senior !== undefined) hasFlag = true;
+		if (c.is_senior) seniorIds.add(c.id);
+	}
+	const isTwoLayer = data.meta?.two_layer === true || hasFlag;
+	// Fallback: two-layer file with no explicit flags — seniors are the un-offset ids.
+	if (isTwoLayer && seniorIds.size === 0) {
+		for (const c of data.crew) if (c.id < NORMAL_ID_OFFSET) seniorIds.add(c.id);
+	}
+	return { isTwoLayer, seniorIds };
+}
+
+/** Split a flight's operating crew into senior / normal and report the per-layer need.
+ *  A senior beyond the single senior seat fills a normal seat (senior substitution: a
+ *  senior may take a normal seat, but never vice-versa), so `juniorFilled` counts the
+ *  operating normals plus any surplus operating seniors. */
+export function layerFill(assigned: number[], minCrew: number, ctx: LayerContext) {
+	const senior = assigned.filter((id) => ctx.seniorIds.has(id));
+	const junior = assigned.filter((id) => !ctx.seniorIds.has(id));
+	const seniorNeed = ctx.isTwoLayer ? 1 : 0;
+	const juniorNeed = ctx.isTwoLayer ? Math.max(0, minCrew - 1) : minCrew;
+	const juniorFilled = junior.length + (ctx.isTwoLayer ? Math.max(0, senior.length - seniorNeed) : 0);
+	return { senior, junior, seniorNeed, juniorNeed, juniorFilled };
+}
+
+/** Coverage status under the two-layer rule: no senior ⇒ CANCELLED (uncovered); a senior
+ *  but the normal seats not all filled (by normals or surplus seniors) ⇒ PARTIAL. In
+ *  senior-only view, normals are ignored entirely. */
+export function layerStatus(
+	assigned: number[],
+	minCrew: number,
+	ctx: LayerContext,
+	seniorOnly: boolean
+): FlightStatus {
+	const { senior, juniorNeed, juniorFilled } = layerFill(assigned, minCrew, ctx);
+	if (senior.length === 0) return 'uncovered';
+	if (seniorOnly) return 'covered';
+	return juniorFilled < juniorNeed ? 'partial' : 'covered';
+}
+
 // ── Duty / availability rules ─────────────────────────────────────────────────
 // Max continuous duty window before a rest break is required.
 const MAX_DUTY_MIN = 14 * 60; // 14 hours
@@ -350,9 +405,20 @@ export function processData(
 	timeStart: number,
 	timeEnd: number,
 	crewId: number | null = null,
-	airportFilter: { a: string | null; b: string | null } | null = null
+	airportFilter: { a: string | null; b: string | null } | null = null,
+	seniorOnly: boolean = false
 ): ProcessedData {
-	const { flights, routes, uncovered_flights } = data;
+	const { flights, uncovered_flights } = data;
+	const ctx = layerContext(data);
+	// Senior-only view: drop normal-crew routes so the whole snapshot (arcs, crew on the
+	// ground, coverage) reflects the senior layer alone. No-op for single-layer data.
+	const showSeniorOnly = seniorOnly && ctx.isTwoLayer;
+	const routes = showSeniorOnly
+		? data.routes.filter((r) => ctx.seniorIds.has(r.crew_id))
+		: data.routes;
+	const crewList = showSeniorOnly
+		? data.crew.filter((c) => ctx.seniorIds.has(c.id))
+		: data.crew;
 	const fa = airportFilter?.a ?? null;
 	const fb = airportFilter?.b ?? null;
 
@@ -385,12 +451,19 @@ export function processData(
 	// Enrich all flights with status
 	const flightInfos: FlightInfo[] = flights.map((f) => {
 		const crew = flightCrew.get(f.id);
-		const actual = crew?.flight.length ?? 0;
+		const assigned = crew?.flight ?? [];
+		const actual = assigned.length;
 		const uncoveredKey = `${f.origin}:${f.dest}:${f.dep_min}`;
 		const missing = Math.round(uncoveredMap.get(uncoveredKey) ?? 0);
+		const fill = layerFill(assigned, f.min_crew, ctx);
 
 		let status: FlightStatus;
-		if (uncoveredMap.has(uncoveredKey)) {
+		if (ctx.isTwoLayer) {
+			// Driven by who actually operates the flight: no senior ⇒ cancelled, short
+			// only on normals ⇒ partial. (The combined uncovered list holds only the
+			// cancelled flights, so missing_slots can't tell us about understaffing.)
+			status = layerStatus(assigned, f.min_crew, ctx, showSeniorOnly);
+		} else if (uncoveredMap.has(uncoveredKey)) {
 			status = missing >= f.min_crew ? 'uncovered' : 'partial';
 		} else if (actual === 0 && f.min_crew > 0) {
 			status = 'uncovered';
@@ -402,12 +475,23 @@ export function processData(
 
 		return {
 			...f,
+			// Displayed requirement: senior-only view → exactly 1 (the senior seat, so
+			// over-covered seniors honestly read e.g. 2/1); combined view → max(real,
+			// assigned) so flight-arc over-coverage reads as filled rather than N/min.
+			// Status was already computed from the REAL min_crew above, so this is
+			// display-only.
+			min_crew: showSeniorOnly ? 1 : Math.max(f.min_crew, actual),
 			status,
-			assigned_crew: crew?.flight ?? [],
+			assigned_crew: assigned,
 			deadhead_crew: crew?.deadhead ?? [],
 			actual_crew: actual,
 			missing_slots: missing,
-			crewDataAvailable: crew !== undefined
+			crewDataAvailable: crew !== undefined,
+			twoLayer: ctx.isTwoLayer,
+			senior_crew: fill.senior,
+			junior_crew: fill.junior,
+			senior_need: fill.seniorNeed,
+			junior_need: fill.juniorNeed
 		};
 	});
 
@@ -601,7 +685,7 @@ export function processData(
 	if (fb) ensureAirport(fb);
 
 	// Seed from crew bases
-	for (const c of data.crew) {
+	for (const c of crewList) {
 		ensureAirport(c.base);
 		airportMap.get(c.base)?.basedCrew.push(c.id);
 	}
@@ -609,7 +693,7 @@ export function processData(
 	// Compute which crew are on the ground at each airport at currentTime
 	// (use timeStart as the current snapshot time)
 	for (const route of routes) {
-		const crewRecord = data.crew.find(c => c.id === route.crew_id);
+		const crewRecord = crewList.find(c => c.id === route.crew_id);
 		const base = crewRecord?.base ?? route.base ?? '?';
 		const { location, crewInfo } = computeCrewGroundStatus(route.crew_id, base, route.legs, timeStart, route.breaks);
 		if (location !== null) {
@@ -627,7 +711,7 @@ export function processData(
 
 	// Also add crew with no routes who are implicitly at their base
 	const routedCrewIds = new Set(routes.map(r => r.crew_id));
-	for (const c of data.crew) {
+	for (const c of crewList) {
 		if (!routedCrewIds.has(c.id)) {
 			ensureAirport(c.base);
 			const apt = airportMap.get(c.base);

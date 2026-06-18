@@ -54,11 +54,20 @@ export interface ScheduleMeta {
 	uncovered_slots: number;
 	num_flights: number;
 	covered_flights: number;
+	/** Two-layer (senior + normal) result. When true, each flight needs exactly one
+	 *  senior plus (min_crew − 1) normals, and `crew[].is_senior` distinguishes them. */
+	two_layer?: boolean;
+	n_senior?: number;
+	n_normal?: number;
+	cancelled?: number;
+	fully_crewed?: number;
+	understaffed?: number;
+	runtime_secs?: { layer1: number; layer2: number; combine?: number; total: number } | null;
 }
 
 export interface ScheduleData {
 	meta: ScheduleMeta;
-	crew: Array<{ id: number; base: string }>;
+	crew: Array<{ id: number; base: string; is_senior?: boolean }>;
 	flights: Flight[];
 	routes: CrewRoute[];
 	uncovered_flights: UncoveredFlight[];
@@ -73,6 +82,13 @@ export interface FlightInfo extends Flight {
 	actual_crew: number;
 	missing_slots: number;
 	crewDataAvailable: boolean; // false when flight not present in any route leg (standing assignment)
+	// ── Two-layer fill (senior + normal). For single-layer data these mirror the
+	//    overall counts: senior_crew is empty and junior_crew == assigned_crew.
+	twoLayer: boolean;
+	senior_crew: number[];   // assigned crew that are senior
+	junior_crew: number[];   // assigned crew that are normal
+	senior_need: number;     // 1 when two-layer, else 0
+	junior_need: number;     // min_crew − 1 when two-layer, else min_crew
 }
 
 // Per-(origin,dest,status) arc — what deck.gl renders

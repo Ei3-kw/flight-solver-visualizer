@@ -21,7 +21,7 @@
 			? processData(appState.data, appState.currentTime, appState.currentTime, appState.focusedCrewId, {
 					a: appState.filterAirportA,
 					b: appState.filterAirportB
-				})
+				}, appState.seniorOnly)
 			: null
 	);
 

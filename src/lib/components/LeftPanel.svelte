@@ -1,12 +1,20 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { formatMinutes, formatDuration, processData } from '$lib/processData';
+	import { formatMinutes, formatDuration, processData, layerContext, layerStatus, layerFill } from '$lib/processData';
+	import type { Flight, FlightInfo, FlightStatus } from '$lib/types';
+
+	const layerCtx = $derived(
+		appState.data ? layerContext(appState.data) : { isTwoLayer: false, seniorIds: new Set<number>() }
+	);
+	function isSenior(id: number) {
+		return layerCtx.seniorIds.has(id);
+	}
 
 	// Derive a live AirportInfo for the selected airport — re-runs whenever
 	// currentTime changes so crew status stays up to date as the scrubber moves.
 	const liveAirport = $derived(
 		appState.selectedAirportIata && appState.data
-			? (processData(appState.data, appState.currentTime, appState.currentTime, null)
+			? (processData(appState.data, appState.currentTime, appState.currentTime, null, null, appState.seniorOnly)
 					.airports.get(appState.selectedAirportIata) ?? null)
 			: null
 	);
@@ -90,6 +98,19 @@
 		return m;
 	});
 
+	// flight_id → deadheading crew IDs (for full FlightInfo enrichment off the map).
+	const deadheadIndex = $derived.by(() => {
+		const m = new Map<number, number[]>();
+		if (!appState.data) return m;
+		for (const r of appState.data.routes)
+			for (const leg of r.legs)
+				if (leg.flight_id != null && leg.type === 'deadhead') {
+					if (!m.has(leg.flight_id)) m.set(leg.flight_id, []);
+					m.get(leg.flight_id)!.push(r.crew_id);
+				}
+		return m;
+	});
+
 	const uncovIndex = $derived.by(() => {
 		const m = new Map<string, number>();
 		if (!appState.data) return m;
@@ -101,12 +122,65 @@
 	function statusOf(f: { id: number; origin: string; dest: string; dep_min: number; min_crew: number }) {
 		const crew = flightCrewIndex.get(f.id) ?? [];
 		const missing = uncovIndex.get(`${f.origin}:${f.dest}:${f.dep_min}`) ?? 0;
-		const status =
-			missing === 0 && crew.length >= f.min_crew ? 'covered'
+		const status = layerCtx.isTwoLayer
+			? layerStatus(crew, f.min_crew, layerCtx, appState.seniorOnly)
+			: missing === 0 && crew.length >= f.min_crew ? 'covered'
 			: crew.length === 0 && missing > 0 ? 'uncovered'
 			: 'partial';
 		return { status: status as 'covered' | 'partial' | 'uncovered', actual_crew: crew.length, missing_slots: missing, assigned_crew: crew };
 	}
+
+	/** Build a COMPLETE FlightInfo for a raw flight (same shape processData emits), so
+	 *  lists outside the map snapshot — e.g. the airborne list — open a working detail
+	 *  panel and carry the two-layer senior/normal fill. */
+	function enrichFlight(f: Flight): FlightInfo {
+		let assigned = flightCrewIndex.get(f.id) ?? [];
+		let deadhead = deadheadIndex.get(f.id) ?? [];
+		if (appState.seniorOnly && layerCtx.isTwoLayer) {
+			assigned = assigned.filter(isSenior);
+			deadhead = deadhead.filter(isSenior);
+		}
+		const missing = uncovIndex.get(`${f.origin}:${f.dest}:${f.dep_min}`) ?? 0;
+		const fill = layerFill(assigned, f.min_crew, layerCtx);
+		const status: FlightStatus = layerCtx.isTwoLayer
+			? layerStatus(assigned, f.min_crew, layerCtx, appState.seniorOnly)
+			: missing === 0 && assigned.length >= f.min_crew ? 'covered'
+			: assigned.length === 0 && missing > 0 ? 'uncovered'
+			: 'partial';
+		const seniorView = appState.seniorOnly && layerCtx.isTwoLayer;
+		return {
+			...f,
+			// Display denominator: senior-only → 1 (raw senior seat); combined → max(real,
+			// assigned) so flight-arc over-coverage reads as filled. Display-only.
+			min_crew: seniorView ? 1 : Math.max(f.min_crew, assigned.length),
+			status, assigned_crew: assigned, deadhead_crew: deadhead,
+			actual_crew: assigned.length, missing_slots: missing,
+			crewDataAvailable: assigned.length > 0 || deadhead.length > 0,
+			twoLayer: layerCtx.isTwoLayer,
+			senior_crew: fill.senior, junior_crew: fill.junior,
+			senior_need: fill.seniorNeed, junior_need: fill.juniorNeed
+		};
+	}
+
+	// Coverage breakdown computed from the actual routes (authoritative & two-layer aware).
+	const coverageSummary = $derived.by(() => {
+		if (!appState.data) return null;
+		let fully = 0, cancelled = 0, understaffed = 0, seniorCovered = 0;
+		let normalFilled = 0, normalNeed = 0;
+		for (const f of appState.data.flights) {
+			const assigned = flightCrewIndex.get(f.id) ?? [];
+			const fill = layerFill(assigned, f.min_crew, layerCtx);
+			if (fill.senior.length === 0) { cancelled++; continue; }   // cancelled — does not operate
+			seniorCovered++;
+			normalNeed += fill.juniorNeed;
+			normalFilled += Math.min(fill.junior.length, fill.juniorNeed);
+			if (fill.junior.length < fill.juniorNeed) understaffed++; else fully++;
+		}
+		return {
+			total: appState.data.flights.length,
+			fully, cancelled, understaffed, seniorCovered, normalFilled, normalNeed
+		};
+	});
 
 	// Whole-schedule flights into/out of the filtered airport(s), honouring the same
 	// status toggles as the global Layers filter (covered / partial / uncovered).
@@ -119,7 +193,7 @@
 		const show = { covered: appState.showCovered, partial: appState.showPartial, uncovered: appState.showUncovered };
 		return appState.data.flights
 			.filter(match)
-			.map((f) => ({ ...f, ...statusOf(f) }))
+			.map(enrichFlight)
 			.filter((f) => show[f.status])
 			.sort((x, y) => x.dep_min - y.dep_min);
 	});
@@ -202,37 +276,12 @@
 		if (v > appState.timeRange[0]) appState.timeRange = [appState.timeRange[0], v];
 	}
 
-	// Flights airborne at currentTime
+	// Flights airborne at currentTime — fully enriched so clicking opens the detail panel.
 	const airborneFlights = $derived(
 		appState.data
 			? appState.data.flights
 				.filter(f => f.dep_min <= appState.currentTime && f.arr_min >= appState.currentTime)
-				.map(f => {
-					// Find status from processed data if available
-					const routes = appState.data!.routes;
-					const uncovered = appState.data!.uncovered_flights;
-
-					const flightCrew: number[] = [];
-					for (const route of routes) {
-						for (const leg of route.legs) {
-							if (leg.flight_id === f.id && leg.type === 'flight') {
-								flightCrew.push(route.crew_id);
-							}
-						}
-					}
-
-					const uncovKey = `${f.origin}:${f.dest}:${f.dep_min}`;
-					const uncovEntry = uncovered.find(u => u.origin === f.origin && u.dest === f.dest && u.dep_min === f.dep_min);
-					const missingSlots = uncovEntry?.missing_slots ?? 0;
-					const actualCrew = flightCrew.length;
-					const status = missingSlots === 0 && actualCrew >= f.min_crew
-						? 'covered'
-						: missingSlots > 0 && actualCrew === 0
-						? 'uncovered'
-						: 'partial';
-
-					return { ...f, status, assigned_crew: flightCrew, actual_crew: actualCrew, missing_slots: missingSlots };
-				})
+				.map(enrichFlight)
 				.sort((a, b) => a.dep_min - b.dep_min)
 			: []
 	);
@@ -303,6 +352,33 @@
 						</div>
 					{/if}
 
+					<!-- Per-layer fill (two-layer results) -->
+					{#if appState.selectedFlight.twoLayer}
+						{@const sf = appState.selectedFlight}
+						{@const subFill = Math.max(0, sf.senior_crew.length - sf.senior_need)}
+						{@const juniorFilled = sf.junior_crew.length + subFill}
+						{@const seniorOk = sf.senior_crew.length >= sf.senior_need}
+						{@const juniorOk = juniorFilled >= sf.junior_need}
+						<div class="grid {appState.seniorOnly ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 text-xs">
+							<div class="rounded-lg px-3 py-2 {seniorOk ? 'bg-green-500/10' : 'bg-red-500/10'}">
+								<div class="text-white/35">Senior</div>
+								<div class="mt-0.5 font-semibold {seniorOk ? 'text-green-300' : 'text-red-300'}">
+									{sf.senior_crew.length}/{appState.seniorOnly ? sf.senior_need : Math.max(sf.senior_need, sf.senior_crew.length)}
+									{#if sf.senior_crew.length === 0}<span class="text-red-400"> · cancelled</span>{/if}
+								</div>
+							</div>
+							{#if !appState.seniorOnly}
+								<div class="rounded-lg px-3 py-2 {juniorOk ? 'bg-green-500/10' : 'bg-orange-500/10'}">
+									<div class="text-white/35">Normal</div>
+									<div class="mt-0.5 font-semibold {juniorOk ? 'text-green-300' : 'text-orange-300'}">
+										{Math.min(juniorFilled, sf.junior_need)}/{sf.junior_need}
+										{#if subFill > 0}<span class="text-amber-300/80"> · {subFill} by senior</span>{/if}
+									</div>
+								</div>
+							{/if}
+						</div>
+					{/if}
+
 					<!-- Assigned crew -->
 					<div>
 						<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-white/35">
@@ -315,7 +391,14 @@
 								{#each appState.selectedFlight.assigned_crew as cid}
 									<div class="rounded-lg bg-blue-500/10 px-3 py-2.5 text-xs">
 										<div class="flex items-center justify-between">
-											<span class="font-semibold text-blue-300">Crew #{cid}</span>
+											<span class="flex items-center gap-1.5">
+												<span class="font-semibold {layerCtx.isTwoLayer && isSenior(cid) ? 'text-amber-300' : 'text-blue-300'}">Crew #{cid}</span>
+												{#if layerCtx.isTwoLayer}
+													<span class="rounded px-1.5 py-0.5 text-[10px] {isSenior(cid) ? 'bg-amber-500/20 text-amber-300' : 'bg-blue-500/20 text-blue-300'}">
+														{isSenior(cid) ? 'Senior' : 'Normal'}
+													</span>
+												{/if}
+											</span>
 											<span class="rounded bg-blue-500/20 px-1.5 py-0.5 text-blue-400">
 												{crewBase(cid)}
 											</span>
@@ -849,6 +932,26 @@
 					</div>
 				</div>
 
+				<!-- Crew layer (two-layer results only) -->
+				{#if appState.isTwoLayer}
+					<div class="border-b border-white/8 px-4 py-4">
+						<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-white/35">Crew Layer</div>
+						<div class="flex gap-1 rounded-lg bg-white/5 p-1">
+							<button
+								onclick={() => { appState.seniorOnly = false; }}
+								class="flex-1 rounded-md px-2 py-1.5 text-xs transition {!appState.seniorOnly ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white/80'}"
+							>Senior + Normal</button>
+							<button
+								onclick={() => { appState.seniorOnly = true; }}
+								class="flex-1 rounded-md px-2 py-1.5 text-xs transition {appState.seniorOnly ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white/80'}"
+							>Senior only</button>
+						</div>
+						{#if appState.seniorOnly}
+							<div class="mt-2 text-[10px] text-white/40">Showing the senior layer alone — normal crew and their fill are hidden.</div>
+						{/if}
+					</div>
+				{/if}
+
 				<!-- Airport Filter -->
 				<div class="border-b border-white/8 px-4 py-4">
 					<div class="mb-2 flex items-center justify-between">
@@ -1074,14 +1177,61 @@
 				<!-- Stats -->
 				<div class="px-4 py-4">
 					<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-white/35">Summary</div>
-					<div class="grid grid-cols-2 gap-1.5">
-						{#each [['Flights', appState.data.meta.num_flights], ['Covered', appState.data.meta.covered_flights], ['Crew', appState.data.crew.length], ['Uncov. slots', appState.data.meta.uncovered_slots]] as [label, val]}
-							<div class="rounded-lg bg-white/5 px-3 py-2">
-								<div class="text-xs text-white/30">{label}</div>
-								<div class="mt-0.5 text-base font-semibold">{val}</div>
+					{#if appState.isTwoLayer && coverageSummary}
+						{@const cs = coverageSummary}
+						<div class="grid grid-cols-2 gap-1.5">
+							{#each [
+								['Flights', cs.total, 'text-white'],
+								['Fully crewed', cs.fully, 'text-green-400'],
+								['Understaffed', cs.understaffed, 'text-orange-400'],
+								['Cancelled', cs.cancelled, 'text-red-400']
+							] as [label, val, cls]}
+								<div class="rounded-lg bg-white/5 px-3 py-2">
+									<div class="text-xs text-white/30">{label}</div>
+									<div class="mt-0.5 text-base font-semibold {cls}">{val}</div>
+								</div>
+							{/each}
+						</div>
+						<div class="mt-2 flex flex-col gap-1.5">
+							<div class="rounded-lg bg-amber-500/10 px-3 py-2">
+								<div class="flex items-center justify-between text-xs">
+									<span class="text-amber-300/80">Senior seats filled</span>
+									<span class="font-semibold text-amber-300">{cs.seniorCovered}/{cs.total}</span>
+								</div>
 							</div>
-						{/each}
-					</div>
+							<div class="rounded-lg bg-blue-500/10 px-3 py-2">
+								<div class="flex items-center justify-between text-xs">
+									<span class="text-blue-300/80">Normal seats filled</span>
+									<span class="font-semibold text-blue-300">{cs.normalFilled}/{cs.normalNeed}</span>
+								</div>
+							</div>
+							<div class="grid grid-cols-2 gap-1.5">
+								<div class="rounded-lg bg-white/5 px-3 py-2">
+									<div class="text-xs text-white/30">Seniors</div>
+									<div class="mt-0.5 text-base font-semibold text-amber-300">{appState.data.meta.n_senior ?? layerCtx.seniorIds.size}</div>
+								</div>
+								<div class="rounded-lg bg-white/5 px-3 py-2">
+									<div class="text-xs text-white/30">Normals</div>
+									<div class="mt-0.5 text-base font-semibold text-blue-300">{appState.data.meta.n_normal ?? (appState.data.crew.length - layerCtx.seniorIds.size)}</div>
+								</div>
+							</div>
+						</div>
+						{#if appState.data.meta.runtime_secs}
+							<div class="mt-2 text-[10px] text-white/35">
+								Run time: {appState.data.meta.runtime_secs.total}s
+								(senior {appState.data.meta.runtime_secs.layer1}s · normal {appState.data.meta.runtime_secs.layer2}s)
+							</div>
+						{/if}
+					{:else}
+						<div class="grid grid-cols-2 gap-1.5">
+							{#each [['Flights', appState.data.meta.num_flights], ['Covered', appState.data.meta.covered_flights], ['Crew', appState.data.crew.length], ['Uncov. slots', appState.data.meta.uncovered_slots]] as [label, val]}
+								<div class="rounded-lg bg-white/5 px-3 py-2">
+									<div class="text-xs text-white/30">{label}</div>
+									<div class="mt-0.5 text-base font-semibold">{val}</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/if}
 		{/if}

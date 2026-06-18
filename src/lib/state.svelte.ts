@@ -17,6 +17,8 @@ class AppState {
 	showCovered = $state(true);
 	showPartial = $state(true);
 	showUncovered = $state(true);
+	/** Two-layer view: false = senior + normal (default), true = senior layer only. */
+	seniorOnly = $state(false);
 	viewMode = $state<'map' | 'globe'>('map');
 	focusedCrewId = $state<number | null>(null);
 	/** Airport filter: with only A set, show flights touching A; with A and B set,
@@ -28,6 +30,13 @@ class AppState {
 		return this.data?.meta.horizon_end ?? 0;
 	}
 
+	/** True when the loaded result is a two-layer (senior + normal) schedule. */
+	get isTwoLayer(): boolean {
+		if (!this.data) return false;
+		return this.data.meta.two_layer === true
+			|| this.data.crew.some((c) => c.is_senior !== undefined);
+	}
+
 	// Explicit panel state — avoids Svelte @const reactivity issues
 	get panelView(): 'flight' | 'airport' | 'route' | 'controls' {
 		if (this.selectedFlight) return 'flight';
@@ -37,6 +46,14 @@ class AppState {
 	}
 
 	loadData(d: ScheduleData) {
+		// Combined / older exports may omit horizon_end — derive it from the schedule so
+		// the time scrubber still works.
+		if (!d.meta.horizon_end) {
+			let h = 0;
+			for (const f of d.flights) h = Math.max(h, f.arr_min);
+			for (const r of d.routes) for (const l of r.legs) h = Math.max(h, l.arr);
+			d.meta.horizon_end = h;
+		}
 		this.data = d;
 		this.timeRange = [0, d.meta.horizon_end];
 		this.currentTime = Math.floor(d.meta.horizon_end / 2);
@@ -47,6 +64,7 @@ class AppState {
 		this.focusedCrewId = null;
 		this.filterAirportA = null;
 		this.filterAirportB = null;
+		this.seniorOnly = false;
 	}
 
 	selectRoute(route: RouteData | null, statusFilter: FlightStatus | null = null) {

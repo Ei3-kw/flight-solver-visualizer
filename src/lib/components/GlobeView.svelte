@@ -18,7 +18,7 @@
 
 	const processed = $derived(
 		appState.data
-			? processData(appState.data, appState.currentTime, appState.currentTime, appState.focusedCrewId)
+			? processData(appState.data, appState.currentTime, appState.currentTime, appState.focusedCrewId, null, appState.seniorOnly)
 			: null
 	);
 
